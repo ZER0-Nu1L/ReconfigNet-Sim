@@ -4,6 +4,7 @@ from mininet.topo import Topo
 from mininet.log import setLogLevel, info
 from mininet.cli import CLI
 import struct, os
+import json
 
 def hostIP(i, mask=False):
     '''
@@ -41,10 +42,17 @@ class CustomTopo(Topo):
 
 def main():
     setLogLevel('info')
-    
-    mode = 'l3'
-    num_hosts = 8
-    enable_debugger = False
+    # Load configuration from TOML file
+    config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config/p4app.json')
+    if not os.path.exists(config_file):
+        info("Warning: Configuration file not found. Using default configuration.")
+        config = {}
+    else:
+        with open(config_file, 'r') as file:
+            config = json.load(file)
+    mode = config.get('mode', 'l3')
+    num_hosts = config.get('num_hosts', 8)
+    enable_debugger = config.get('enable_debugger', False)
 
     topo = CustomTopo(num_hosts, mode)
     net = P4Mininet(program='ocs.p4', topo=topo, enable_debugger=enable_debugger)
