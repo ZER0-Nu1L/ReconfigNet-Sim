@@ -1,0 +1,7 @@
+[submodule "ocs.p4app/p4app-rc2"]
+	path = ocs.p4app/p4app-rc2
+	url = https://github.com/p4lang/p4app
+	branch = rc-2.0.0
+[submodule "ocs.p4app/p4app-main"]
+	path = ocs.p4app/p4app-main
+	url = https://github.com/p4lang/p4app
