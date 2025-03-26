@@ -40,6 +40,72 @@ class CustomTopo(Topo):
             # NOTE: Only responsible for L2 connectivity
             # gateway, etc. does not seem to be set by default
 
+def generate_ocs_entries_from_pi(pi, num_hosts):
+    """Generate OCS mapping entries with validity verification"""
+    if len(pi) != num_hosts:
+        raise ValueError("pi length {} does not match {}".format(len(pi), num_hosts))
+    entries = []
+    for ingress_port, egress_port in enumerate(pi, 1):  # ingress_port base 1
+        entries.append({
+            'table_name': 'egress.ocs_mapping',
+            'match_fields': {
+                'standard_metadata.ingress_port': [ingress_port],
+                'standard_metadata.egress_port': [egress_port]
+            },
+            'action_name': 'NoAction',
+            'action_params': {}
+        })
+    return entries
+
+def init_ocs_mapping(sw, pi, pi_state, num_hosts):
+    if pi_state[0] != 1:
+        info("Initialization failed: The OCS is in an unstable state")
+        return False
+    try:
+        entries = generate_ocs_entries_from_pi(pi, num_hosts)
+        for entry in entries:
+            sw.insertTableEntry(entry)
+        pi_state[0] = 1
+        info("The OCS mapping initialization is complete")
+        return True
+    except ValueError as e:
+        info("Initialization Exception:{}".format(str(e)))
+        pi_state[0] = -1
+        return False
+
+def update_ocs_mapping(sw, new_pi, pi, pi_state, num_hosts):
+    """update OCS mapping's table entries"""
+    # Pre-check
+    if new_pi == pi:
+        info("The new config is the same as the current config, skipping updates")
+        return False
+    if len(new_pi) != num_hosts:
+        raise ValueError("The new pi length {} conflicts with  {}".format(len(new_pi), num_hosts))
+    if pi_state[0] != 1:
+        info("The OCS is in the process of updating, rejecting the new request")
+        return False
+    # Enter the update process
+    pi_state[0] = -1
+    try:
+        old_entries = generate_ocs_entries_from_pi(pi, num_hosts)
+        for entry in old_entries:
+            sw.removeTableEntry(entry)
+      
+        new_entries = generate_ocs_entries_from_pi(new_pi, num_hosts)
+        for entry in new_entries:
+            sw.insertTableEntry(entry)
+      
+        pi[:] = new_pi.copy()
+        pi_state[0] = 1
+        info("OCS update is successful, new mapping:{}".format(new_pi))
+        return True
+    except Exception as e:
+        info("Update failed: {}, rolled back".format(str(e)))
+        pi_state[0] = 1
+        return False
+
+
+
 def main():
     setLogLevel('info')
     # Load configuration from TOML file
@@ -50,13 +116,14 @@ def main():
     else:
         with open(config_file, 'r') as file:
             config = json.load(file)
+    
     mode = config.get('mode', 'l3')
     num_hosts = config.get('num_hosts', 8)
     enable_debugger = config.get('enable_debugger', False)
 
     topo = CustomTopo(num_hosts, mode)
     net = P4Mininet(program='ocs.p4', topo=topo, enable_debugger=enable_debugger)
-    # NOTE: set setup every host ARP to every host by default.
+    # NOTE: P4Mininet set setup every host ARP to every host by default.
     net.start()
 
     '''
@@ -80,13 +147,11 @@ def main():
     tb_ipv4_lpm_entries = []
     # tb_arp_forward_entries = []
     tb_send_frame_entries = []
-    tb_ocs_mapping_entries = [] # TODO: 
     all_table_entries = [
         tb_ipv4_lpm_entries, 
         # tb_arp_forward_entries, 
         tb_forward_entries,
         tb_send_frame_entries,
-        tb_ocs_mapping_entries # TODO: 
     ]
     for i in range(1, num_hosts+1):
         port = i
@@ -125,20 +190,6 @@ def main():
                 # NOTE: L2 Logic
 
 
-        if num_hosts >= 2:
-            for i in range(1, num_hosts, 2):
-                tb_ocs_mapping_entries.append(dict(
-                        table_name    = 'egress.ocs_mapping',
-                        match_fields  = {'standard_metadata.ingress_port': [(i)], 'standard_metadata.egress_port': [(i+1)]},
-                        action_name   = 'NoAction',
-                        action_params = {}
-                        ))
-                tb_ocs_mapping_entries.append(dict(
-                        table_name    = 'egress.ocs_mapping',
-                        match_fields  = {'standard_metadata.ingress_port': [(i+1)], 'standard_metadata.egress_port': [(i)]},
-                        action_name   = 'NoAction',
-                        action_params = {}))
-
     s1 = net.get('s1')
     for table_entries in all_table_entries:
         for table_entry in table_entries:
@@ -147,11 +198,33 @@ def main():
     info("***** Installing default table entries on switch s1 *****\n")
     s1.printTableEntries()
     info("***** All table entries installed. Network is ready! *****\n")
-    
+
+    '''
+    Perform OCS mapping
+    '''
+    pi = [i+1 if i%2==1 else i-1 for i in range(1, num_hosts+1)]
+    pi_state = [1]
+    if not init_ocs_mapping(s1, pi, pi_state, num_hosts):
+        net.stop()
+        exit(1)
+    net.pingAll(timeout = 1)
+
+    # 示例更新操作
+    if num_hosts == 8:
+        test_cases = [
+            [4,3,2,1,8,7,6,5],
+            [5,6,7,8,1,2,3,4],
+            [2,1,4,3,6,5,8,7]
+        ]
+        for pi_config in test_cases:
+            update_ocs_mapping(s1, pi_config, pi, pi_state, num_hosts)
+            net.pingAll(timeout = 1)
+
+
     # NOTE: for Debug in container
     if(enable_debugger):
         container = os.environ['HOSTNAME']
-        s1_logfile = "/tmp/p4app-logs/p4s.{}.log".format(s1.name)
+        s1_logfile = "/tmp/p4app-logs/p4s.{}.log".format(s1.name) # NOTE: hard code from p4app
         print('---------------------------------------------------------')
         print('CLI from host operating system using this command:')
         print('  docker exec -t -i %s simple_switch_CLI\n' % container)
@@ -160,13 +233,7 @@ def main():
         print('To run the switch debugger, run this command from your host OS:')
         print('  docker exec -t -i %s bm_p4dbg\n' % container)
         print('---------------------------------------------------------')    
-
-    loss = net.pingAll(timeout = 1)
-    if(enable_debugger):
         CLI(net)
-    else:
-        # assert loss == 0
-        pass
     
     net.stop()
 
