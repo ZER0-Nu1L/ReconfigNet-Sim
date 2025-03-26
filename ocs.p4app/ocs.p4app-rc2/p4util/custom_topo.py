@@ -1,7 +1,6 @@
+# NOTE: custom_topo with hard codes
 from mininet.topo import Topo
 from mininet.log import info
-
-# NOTE: custom_topo with hard codes
 
 switch_name = "s1"
 

@@ -14,7 +14,7 @@ import os
 def main():
     setLogLevel('info')
     '''
-    Load configuration from TOML file
+    Load configuration from JSON file
     '''
     config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config/p4app.json')
     if not os.path.exists(config_file):
@@ -40,7 +40,7 @@ def main():
     setup_switch_basic_entries(net, num_hosts)
 
     '''
-    Start the Reconfigurable Network Northbound Interface (REST API) thread'
+    Start the Reconfigurable Network Northbound Interface (REST API) thread
     '''
     default_pi = [i + 1 if i % 2 == 1 else i - 1 for i in range(1, num_hosts + 1)]
     default_pi_state = [1]

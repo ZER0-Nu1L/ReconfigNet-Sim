@@ -6,11 +6,11 @@ from p4util.ocs_map_p4runtime import init_ocs_mapping, update_ocs_mapping
 from p4util.custom_topo import switch_name
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
-    """支持多线程的 HTTP 服务器"""
+    """HTTP servers that support multithreading"""
 
 
 class OCSRequestHandler(BaseHTTPRequestHandler):
-    """自定义请求处理器"""
+    """Request handler for the OCS northbound API"""
 
     def _set_headers(self, status=200):
         self.send_response(status)
@@ -56,7 +56,6 @@ class OCSRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({'error': 'Invalid request'}).encode())
             return
 
-        # 执行更新操作
         if self.server.update_mapping(new_pi):
             self._set_headers()
             self.wfile.write(json.dumps({'status': 'success'}).encode())
