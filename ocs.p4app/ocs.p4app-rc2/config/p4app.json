@@ -1,5 +1,10 @@
 {
   "mode": "l3",
   "num_hosts": 8,
-  "enable_debugger": false
+  "enable_debugger": false,
+  "enable_rest_api": true,
+  "rest_api": {
+      "host": "0.0.0.0",
+      "port": 5000
+  }
 }
