@@ -65,8 +65,12 @@ control SwitchIngress(
     inout ingress_intrinsic_metadata_for_deparser_t ig_intr_dprsr_md,
     inout ingress_intrinsic_metadata_for_tm_t ig_intr_tm_md) {
 
+    // Using ALPM to replace traditional LPM
+    Alpm(number_partitions = 1024, subtrees_per_partition = 2) algo_lpm;
+
+
     action _drop() {
-        ig_intr_dprsr_md.drop_ctl = 0x1;
+        ig_intr_dprsr_md.drop_ctl = 0x1; // TNA
     }
 
     action set_nhop(bit<32> nhop_ipv4, bit<9> port) {
@@ -88,6 +92,7 @@ control SwitchIngress(
             _drop;
         }
         size = 1024;
+        alpm = algo_lpm;
         default_action = _drop();
     }
 
@@ -103,18 +108,31 @@ control SwitchIngress(
         default_action = _drop();
     }
 
+
+    table ocs_mapping {
+        key = {
+            ig_intr_md.ingress_port : exact;
+            ig_intr_tm_md.ucast_egress_port : exact;
+        }
+        actions = {
+            NoAction;
+            _drop;
+        }
+        size = 64;
+        const default_action = _drop;
+    }
+
     apply {
         if (hdr.ipv4.isValid()) {
             if (hdr.ipv4.ttl <= 0) {
-                ig_intr_dprsr_md.drop_ctl = 0x1;
+                _drop();
                 return;
             }
           
             ipv4_lpm.apply();
-            if (ig_intr_dprsr_md.drop_ctl == 0x0) {
-                forward.apply();
-            }
-          
+            forward.apply();
+            ocs_mapping.apply();
+            
             ig_intr_tm_md.bypass_egress = 1w1;
         }
     }

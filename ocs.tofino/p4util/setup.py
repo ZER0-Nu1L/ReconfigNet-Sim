@@ -1,4 +1,4 @@
-from ipaddress import ip_address
+from custom_connect import load_config, hostIP, hostMAC
 
 p4 = bfrt.ocs.pipe
 
@@ -62,33 +62,17 @@ def clear_all(verbose=True, batching=True):
     
 clear_all()
 
+
 '''
 setup_switch_basic_entries
 '''
-def hostIP(i, mask=False, mode='l3'):
-    if mode == 'l3':
-        if mask == True:
-            return "10.0.%d.10/24" % (i)
-        else:
-            return "10.0.%d.10" % (i)
-    elif mode == 'l2':
-        if mask == True:
-            return "10.0.10.%d/24" % (i)
-        else:
-            return "10.0.10.%d" % (i)
-    else:
-        assert mode != 'l2' and mode != 'l3'
-        exit(1)
-
-def hostMAC(i):
-    return '00:00:00:00:00:%02x' % (i)
-    
-
-# NOTE: hard code
-num_hosts = 2
 
 tb_ipv4_lpm =  p4.SwitchIngress.ipv4_lpm
 tb_forward =  p4.SwitchIngress.forward
+
+config = load_config()
+num_hosts = config.get('num_hosts', 8)
+
 for i in range(1, num_hosts+1):
     tb_ipv4_lpm.add_with_set_nhop(
         dst_addr = hostIP(i),
@@ -134,3 +118,22 @@ print ("Table ipv4_lpm:")
 tb_ipv4_lpm.dump(table=True)
 print ("Table tb_forward:")
 tb_forward.dump(table=True)
+
+
+
+
+'''
+ocs_mapping
+'''
+tb_ocs_mapping = p4.SwitchIngress.ocs_mapping
+tb_ocs_mapping.add_with
+
+tb_ocs_mapping.add_with_NoAction(
+    ingress_port=0,
+    ucast_egress_port=1
+)
+
+tb_ocs_mapping.add_with_NoAction(
+    ingress_port=1,
+    ucast_egress_port=0
+)

@@ -1,0 +1,9 @@
+{
+    "mode": "l3",
+    "num_hosts": 8,
+    "enable_rest_api": false,
+    "rest_api": {
+        "host": "0.0.0.0",
+        "port": 5000
+    }
+  }
