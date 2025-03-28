@@ -1,4 +1,4 @@
-from custom_connect import load_config, hostIP, hostMAC
+from custom_connect import load_config, hostIP, hostMAC, get_switch_port
 
 p4 = bfrt.ocs.pipe
 
@@ -69,22 +69,30 @@ setup_switch_basic_entries
 
 tb_ipv4_lpm =  p4.SwitchIngress.ipv4_lpm
 tb_forward =  p4.SwitchIngress.forward
+tb_ocs_mapping = p4.SwitchIngress.ocs_mapping
 
 config = load_config()
 num_hosts = config.get('num_hosts', 8)
 
-for i in range(1, num_hosts+1):
+for host_id in range(1, num_hosts+1):
     tb_ipv4_lpm.add_with_set_nhop(
-        dst_addr = hostIP(i),
+        dst_addr = hostIP(host_id),
         dst_addr_p_length = 32,
-        nhop_ipv4 = hostIP(i),
-        port = i - 1
-        # NOTE: tofino port number start from 0
+        nhop_ipv4 = hostIP(host_id),
+        port = get_switch_port(host_id)
     )
     tb_forward.add_with_set_dmac(
-        nhop_ipv4 = hostIP(i),
-        dmac = hostMAC(i)
+        nhop_ipv4 = hostIP(host_id),
+        dmac = hostMAC(host_id)
     )
+
+default_pi = [i + 1 if i % 2 == 1 else i - 1 for i in range(1, num_hosts + 1)]
+for src_host, dst_host in enumerate(default_pi, 1):  # ingress_port base 1
+    tb_ocs_mapping.add_with_NoAction(
+        ingress_port      = get_switch_port(src_host),
+        ucast_egress_port = get_switch_port(dst_host),
+    )
+
 '''
 tb_ipv4_lpm.add_with_set_nhop(
     dst_addr = "10.0.1.10",
@@ -106,6 +114,15 @@ tb_forward.add_with_set_dmac(
     nhop_ipv4="10.0.2.10",
     dmac='00:00:00:00:00:02'
 )
+
+tb_ocs_mapping.add_with_NoAction(
+    ingress_port=0,
+    ucast_egress_port=1
+)
+tb_ocs_mapping.add_with_NoAction(
+    ingress_port=1,
+    ucast_egress_port=0
+)
 '''
     
 bfrt.complete_operations()
@@ -118,22 +135,3 @@ print ("Table ipv4_lpm:")
 tb_ipv4_lpm.dump(table=True)
 print ("Table tb_forward:")
 tb_forward.dump(table=True)
-
-
-
-
-'''
-ocs_mapping
-'''
-tb_ocs_mapping = p4.SwitchIngress.ocs_mapping
-tb_ocs_mapping.add_with
-
-tb_ocs_mapping.add_with_NoAction(
-    ingress_port=0,
-    ucast_egress_port=1
-)
-
-tb_ocs_mapping.add_with_NoAction(
-    ingress_port=1,
-    ucast_egress_port=0
-)

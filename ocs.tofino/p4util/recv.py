@@ -2,7 +2,7 @@
 import os
 import argparse
 from scapy.all import IP, sniff
-from custom_connect import get_interface_name
+from custom_connect import get_host_interface
 
 def handle_pkt(pkt):
     print("="*50)
@@ -24,7 +24,7 @@ def main():
     parser.add_argument("--host", type=int, required=True, help="Host id to use for receiving packets")
     args = parser.parse_args()
     
-    iface = get_interface_name(args.host)
+    iface = get_host_interface(args.host)
     print("Sniffing on interface:", iface)
     print("Press Ctrl-C to stop...")
     sniff(iface=iface, prn=lambda pkt: handle_pkt(pkt))
