@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 import os
 import sys
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from config.custom_connect import hostIP, hostMAC, switchMAC, get_host_interface, load_config
+
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from scapy.all import ICMP, Ether, IP, srp1, sendp, sniff
-from custom_connect import hostIP, hostMAC, switchMAC, get_host_interface, load_config, get_switch_port
 
 # ================== Global Config ==================
 TIMEOUT = 1  # Per-probe timeout
 MAX_WORKERS = 20  # Concurrent thread pool size
 COLOR_ENABLED = True  # ANSI color codes
 
-# ================== Utility Functions ==================
 def check_root():
     """Verify script runs with root privileges"""
     if os.getuid() != 0:
@@ -68,7 +72,7 @@ def print_mapping_table(connectivity, num_hosts):
     """Display active host-to-host connectivity mappings"""
     print("\n\033[1;36mActive Connectivity Mappings:\033[0m")
     print(f"{'Source':^10} ──► {'Destination':^10}")
-    print(f"{'──────':^10}    {'───────────':^10}")
+    print(f"{'──────':^10}     {'───────────':^10}")
   
     # Track displayed pairs to avoid duplicates
     displayed = set()
@@ -97,8 +101,8 @@ def print_connectivity_matrix(matrix, num_hosts):
 # ================== Main Execution Flow ==================
 def main():
     check_root()
-  
-    config = load_config()
+    config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../config/project_conf.json')
+    config = load_config(config_file)
     num_hosts = config.get('num_hosts', 8)
     mode = config.get('mode', 'l3')
   
@@ -127,7 +131,7 @@ def main():
   
     # Display results
     print_mapping_table(connectivity, num_hosts)
-    print_connectivity_matrix(connectivity, num_hosts)
+    # print_connectivity_matrix(connectivity, num_hosts)
 
 if __name__ == "__main__":
     main()

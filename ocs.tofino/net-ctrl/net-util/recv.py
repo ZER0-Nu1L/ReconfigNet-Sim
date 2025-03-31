@@ -1,8 +1,12 @@
 #!/usr/bin/python
-import os
+import os, sys
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from config.custom_connect import get_host_interface
+
 import argparse
 from scapy.all import IP, sniff
-from custom_connect import get_host_interface
 
 def handle_pkt(pkt):
     print("="*50)

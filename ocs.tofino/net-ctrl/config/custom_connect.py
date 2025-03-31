@@ -1,13 +1,12 @@
 # NOTE: custom connect with hard codes
 import json, os
 # from scapy.all import get_if_list
-# NOTE: 
+# NOTE: scapy not supported in bfshell
 
-def load_config():
+def load_config(config_file):
     '''
     Load configuration from JSON file
     '''
-    config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../config/project_conf.json')
     if not os.path.exists(config_file):
         print("Warning: Configuration file not found. Using default configuration.")
         config = {}

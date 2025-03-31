@@ -1,7 +1,11 @@
 #!/usr/bin/python
-import os
+import os, sys
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from config.custom_connect import get_host_interface, hostMAC, hostIP, load_config
+
 import argparse
-from custom_connect import hostIP, hostMAC, load_config, get_host_interface
 from scapy.all import IP, Ether, sendp, get_if_hwaddr
 
 
@@ -20,8 +24,9 @@ def main():
     
     src_host_id = args.src
     dst_host_id = args.dst
-    
-    config = load_config()  # 调用 load_config() 函数加载配置
+
+    config_file = os.path.join(project_root, 'config/project_conf.json')
+    config = load_config(config_file)
     num_hosts = config.get('num_hosts', 8)
 
     if src_host_id > num_hosts or dst_host_id > num_hosts:
