@@ -5,14 +5,16 @@ from logging import info # TODO:
 from config.custom_connect import get_switch_port
 
 
-def init_ocs_mapping(p4_pipe, pi_state, num_hosts):
+def init_ocs_mapping(p4_pipe, default_pi, pi_state, num_hosts):
+    if len(default_pi) != num_hosts:
+        raise ValueError("The new pi length {} conflicts with  {}".format(len(default_pi), num_hosts))
     if pi_state[0] != 1:
         info("Initialization failed: The OCS is in an unstable state\n")
         return False
     try:
         tb_ocs_mapping = p4_pipe.SwitchIngress.ocs_mapping
         
-        default_pi = [i + 1 if i % 2 == 1 else i - 1 for i in range(1, num_hosts + 1)]
+        # default_pi = [i + 1 if i % 2 == 1 else i - 1 for i in range(1, num_hosts + 1)]
         for src_host, dst_host in enumerate(default_pi, start=1):
             tb_ocs_mapping.add_with_NoAction(
                 ingress_port      = get_switch_port(src_host),
