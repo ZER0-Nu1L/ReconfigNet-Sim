@@ -1,38 +1,60 @@
+import os
+import sys
+import threading
+
+
+configured_file = os.environ.get('OCS_CONFIG_FILE')
+script_dir = os.environ.get('OCS_NET_CTRL_DIR')
+if not script_dir and configured_file:
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(configured_file)))
+if not script_dir:
+    script_dir = os.path.dirname(os.path.abspath(globals().get('__file__', os.getcwd())))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 from config.custom_connect import load_config
 from p4util.cleanup import clear_all
 from p4util.sw_fwd_p4runtime import setup_switch_basic_entries, show_switch_basic_entries
-from p4util.ocs_map_p4runtime import init_ocs_mapping, update_ocs_mapping
+from p4util.ocs_map_p4runtime import init_ocs_mapping
 from api.northbound import run_rest_api
 
-import threading
-import os
 
-# Load configuration from JSON file
-config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config/project_conf.json')
+config_file = os.environ.get('OCS_CONFIG_FILE')
+if not config_file:
+    raise RuntimeError(
+        "OCS_CONFIG_FILE is required; pass an explicit deployment profile. "
+        "See config/project_conf.example.json for the schema.")
 config = load_config(config_file)
-num_hosts = config.get('num_hosts', 8)
+endpoints = config['endpoints']
 
-# Switch states setup
-p4_pipe = bfrt.ocs.pipe
+print("Loading OCS profile {} from {}".format(
+    config.get('fabric', 'unnamed'), config_file))
+print("Endpoint dev_ports: {}".format([
+    endpoint['dev_port'] for endpoint in endpoints]))
+
+p4_program = config.get('p4_program', 'ocs')
+p4_pipe = getattr(bfrt, p4_program).pipe
 clear_all(p4_pipe)
-
-setup_switch_basic_entries(p4_pipe, num_hosts)
+installed_l3_entries = setup_switch_basic_entries(p4_pipe, endpoints)
 show_switch_basic_entries(p4_pipe)
 
-# Start the Reconfigurable Network Northbound Interface (REST API) thread
-default_pi_state = [1]
-default_pi = [i + 1 if i % 2 == 1 else i - 1 for i in range(1, num_hosts + 1)]
+current_mapping = list(config['initial_mapping'])
+runtime_state = {
+    'status': 1,
+    'mode': 'ocs',
+    'revision': 0,
+}
+init_ocs_mapping(p4_pipe, current_mapping, runtime_state, endpoints)
+bfrt.complete_operations()
+
+print("Installed {} IPv4/MAC endpoint pairs".format(installed_l3_entries))
+print("Initial OCS mapping: {}".format(current_mapping))
 
 if config.get('enable_rest_api', True):
-    rest_api_config = config.get('rest_api', {})
-    rest_api_host = rest_api_config.get('host', '127.0.0.1')
-    rest_api_port = rest_api_config.get('port', 5000)
+    rest_api_config = config['rest_api']
     api_thread = threading.Thread(
-        target = run_rest_api,
-        args = (default_pi, default_pi_state, p4_pipe, num_hosts,
-                rest_api_host, rest_api_port),
-        daemon=True
-    )
+        target=run_rest_api,
+        args=(current_mapping, runtime_state, p4_pipe, endpoints,
+              rest_api_config['host'], rest_api_config['port']))
+    api_thread.daemon = True
     api_thread.start()
-
-bfrt.complete_operations()

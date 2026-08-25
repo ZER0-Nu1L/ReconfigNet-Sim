@@ -11,7 +11,7 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
     action set_nhop(bit<32> nhop_ipv4, bit<9> port) {
         meta.ingress_metadata.nhop_ipv4 = nhop_ipv4;
         standard_metadata.egress_spec = port;
-        hdr.ipv4.ttl = hdr.ipv4.ttl + 1;
+        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
     action set_dmac(bit<48> dmac) {
         hdr.ethernet.dstAddr = dmac;
@@ -61,9 +61,13 @@ control ingress(inout headers hdr, inout metadata meta, inout standard_metadata_
         // if (hdr.arp.isValid()) {
         //     arp_forward.apply();
         // }
-        if (hdr.ipv4.isValid() && hdr.ipv4.ttl > 0) {
-          ipv4_lpm.apply();
-          forward.apply();
+        if (hdr.ipv4.isValid()) {
+            if (hdr.ipv4.ttl <= 1) {
+                _drop();
+            } else {
+                ipv4_lpm.apply();
+                forward.apply();
+            }
         }
     }
 }
@@ -74,6 +78,10 @@ control egress(inout headers hdr, inout metadata meta, inout standard_metadata_t
     }
     action _drop() {
         mark_to_drop(standard_metadata);
+    }
+    direct_counter(CounterType.packets_and_bytes) ocs_counter;
+    action permit_ocs() {
+        ocs_counter.count();
     }
     table send_frame {
         actions = {
@@ -94,11 +102,12 @@ control egress(inout headers hdr, inout metadata meta, inout standard_metadata_t
             standard_metadata.egress_port: exact;
         }
         actions = {
-            NoAction;
+            permit_ocs;
             _drop;
         }
         size = 64;
         default_action = _drop();
+        counters = ocs_counter;
     }
 
     apply {

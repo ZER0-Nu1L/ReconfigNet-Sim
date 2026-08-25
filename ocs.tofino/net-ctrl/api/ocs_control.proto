@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package reconfig_net.ocs.v1;
+
+message Empty {}
+
+message OcsState {
+  repeated uint32 pi = 1;
+  string mode = 2;
+  string status = 3;
+  uint64 revision = 4;
+  uint32 active_entries = 5;
+}
+
+message OperationTiming {
+  uint64 clear_commit_us = 1;
+  uint64 requested_gap_us = 2;
+  uint64 actual_gap_us = 3;
+  uint64 install_commit_us = 4;
+  uint64 programming_total_us = 5;
+  uint64 server_total_us = 6;
+}
+
+message SetModeRequest {
+  string mode = 1;
+  uint64 delay_us = 2;
+}
+
+message SetMappingRequest {
+  repeated uint32 new_pi = 1;
+  uint64 delay_us = 2;
+}
+
+message OperationReply {
+  OcsState state = 1;
+  string result = 2;
+  uint64 request_id = 3;
+  OperationTiming timing = 4;
+}
+
+service OcsControl {
+  rpc GetState(Empty) returns (OcsState);
+  rpc SetMode(SetModeRequest) returns (OperationReply);
+  rpc SetMapping(SetMappingRequest) returns (OperationReply);
+}

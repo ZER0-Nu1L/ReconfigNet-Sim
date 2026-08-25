@@ -99,6 +99,12 @@ control SwitchIngress(
         hdr.ethernet.dst_addr = dmac;
     }
 
+    DirectCounter<bit<32>>(CounterType_t.PACKETS_AND_BYTES) ocs_counter;
+
+    action permit_ocs() {
+        ocs_counter.count();
+    }
+
     table ipv4_lpm {
         key = {
             hdr.ipv4.dst_addr: lpm;
@@ -131,11 +137,12 @@ control SwitchIngress(
             ig_intr_tm_md.ucast_egress_port : exact;
         }
         actions = {
-            NoAction;
-            _drop;
+            permit_ocs;
+            @defaultonly _drop;
         }
         size = 64;
         const default_action = _drop;
+        counters = ocs_counter;
     }
 
     apply {

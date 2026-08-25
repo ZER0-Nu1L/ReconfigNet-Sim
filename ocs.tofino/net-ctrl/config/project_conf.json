@@ -1,9 +1,19 @@
 {
-    "mode": "l3",
-    "num_hosts": 8,
-    "enable_rest_api": true,
-    "rest_api": {
-        "host": "0.0.0.0",
-        "port": 5000
-    }
-  }
+  "fabric": "example",
+  "p4_program": "ocs",
+  "num_hosts": 6,
+  "initial_mapping": [6, 3, 2, 5, 4, 1],
+  "enable_rest_api": true,
+  "rest_api": {
+    "host": "127.0.0.1",
+    "port": 5000
+  },
+  "endpoints": [
+    {"slot": 1, "name": "endpoint01", "front_panel_port": "1/0", "dev_port": 1, "ipv4": "192.0.2.1", "mac": "02:00:00:00:00:01"},
+    {"slot": 2, "name": "endpoint02", "front_panel_port": "2/0", "dev_port": 2, "ipv4": "192.0.2.2", "mac": "02:00:00:00:00:02"},
+    {"slot": 3, "name": "endpoint03", "front_panel_port": "3/0", "dev_port": 3, "ipv4": "192.0.2.3", "mac": "02:00:00:00:00:03"},
+    {"slot": 4, "name": "endpoint04", "front_panel_port": "4/0", "dev_port": 4, "ipv4": "192.0.2.4", "mac": "02:00:00:00:00:04"},
+    {"slot": 5, "name": "endpoint05", "front_panel_port": "5/0", "dev_port": 5, "ipv4": "192.0.2.5", "mac": "02:00:00:00:00:05"},
+    {"slot": 6, "name": "endpoint06", "front_panel_port": "6/0", "dev_port": 6, "ipv4": "192.0.2.6", "mac": "02:00:00:00:00:06"}
+  ]
+}
