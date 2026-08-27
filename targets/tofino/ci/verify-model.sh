@@ -28,6 +28,7 @@ ports_file="$repository_root/targets/tofino/ci/model-ports.json"
 program_name=ocs
 
 mkdir -p "$artifact_root" "$build_root"
+artifact_root=$(cd "$artifact_root" && pwd)
 rm -rf -- "$build_dir"
 mkdir -p "$build_dir"
 
@@ -114,6 +115,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$artifact_root/model-runtime"
+marker_file="$artifact_root/bfrt-initialize.marker"
+rm -f -- "$marker_file"
+runtime_marker_file=/tmp/ocs-bfrt-initialize.marker
+rm -f -- "$runtime_marker_file"
+
 setsid "$SDE/run_tofino_model.sh" \
     -p "$program_name" \
     -f "$ports_file" \
@@ -154,17 +160,43 @@ sleep 5
 kill -0 "$model_pid"
 kill -0 "$switchd_pid"
 
-export OCS_CONFIG_FILE="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
-export OCS_NET_CTRL_DIR="$repository_root/targets/tofino/runtime"
+config_file="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
+bootstrap_file="$build_root/initialize-bfrt.py"
+# bf_switchd is launched through run_switchd.sh, which deliberately forwards
+# only its own SDE variables through sudo.  Set the CI-only paths inside the
+# embedded Python process instead of assuming the client's environment is
+# inherited by that process.
+printf '%s\n' \
+    'import os' \
+    "os.environ['OCS_CONFIG_FILE'] = '$config_file'" \
+    "os.environ['OCS_NET_CTRL_DIR'] = '$repository_root/targets/tofino/runtime'" \
+    "os.environ['OCS_BFRT_INIT_MARKER'] = '$runtime_marker_file'" \
+    "_ocs_script = '$repository_root/targets/tofino/runtime/initialize_dataplane.py'" \
+    "with open(_ocs_script, 'rb') as _ocs_source:" \
+    "    exec(compile(_ocs_source.read(), _ocs_script, 'exec'), globals(), globals())" \
+    >"$bootstrap_file"
+
 command_file="$build_root/initialize-bfrt.cli"
 printf 'bfrt_python %s\nexit\n' \
-    "$repository_root/targets/tofino/runtime/initialize_dataplane.py" \
+    "$bootstrap_file" \
     >"$command_file"
 (
+    cat "$command_file"
+    # bfshell closes its socket as soon as stdin reaches EOF.  Keep stdin
+    # open while the embedded BFRT Python command runs; otherwise the shell
+    # can disconnect before the script has executed.
+    sleep "${BFRT_SHELL_GRACE_SECONDS:-10}"
+) | (
     cd "$build_root"
-    "$SDE/run_bfshell.sh" \
-        -f "$command_file" \
-        --status-port 7777
+    "$SDE/run_bfshell.sh" --status-port 7777
 ) 2>&1 | tee "$artifact_root/bfrt-initialize.log"
+
+if [[ -s "$runtime_marker_file" ]]; then
+    cp -- "$runtime_marker_file" "$marker_file"
+fi
+test -s "$marker_file"
+grep -qx 'ocs-bfrt-initialized' "$marker_file"
+grep -Fq 'Loading OCS profile' "$artifact_root/bfrt-initialize.log"
+grep -Fq 'Initial OCS mapping' "$artifact_root/bfrt-initialize.log"
 
 echo "Tofino model verification passed for $program_name."
