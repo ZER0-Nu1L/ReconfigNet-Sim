@@ -28,6 +28,7 @@ ports_file="$repository_root/targets/tofino/ci/model-ports.json"
 program_name=ocs
 
 mkdir -p "$artifact_root" "$build_root"
+artifact_root=$(cd "$artifact_root" && pwd)
 rm -rf -- "$build_dir"
 mkdir -p "$build_dir"
 
@@ -156,6 +157,9 @@ kill -0 "$switchd_pid"
 
 export OCS_CONFIG_FILE="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
 export OCS_NET_CTRL_DIR="$repository_root/targets/tofino/runtime"
+marker_file="$artifact_root/bfrt-initialize.marker"
+rm -f -- "$marker_file"
+export OCS_BFRT_INIT_MARKER="$marker_file"
 command_file="$build_root/initialize-bfrt.cli"
 printf 'bfrt_python %s\nexit\n' \
     "$repository_root/targets/tofino/runtime/initialize_dataplane.py" \
@@ -166,5 +170,10 @@ printf 'bfrt_python %s\nexit\n' \
         -f "$command_file" \
         --status-port 7777
 ) 2>&1 | tee "$artifact_root/bfrt-initialize.log"
+
+test -s "$marker_file"
+grep -qx 'ocs-bfrt-initialized' "$marker_file"
+grep -Fq 'Loading OCS profile' "$artifact_root/bfrt-initialize.log"
+grep -Fq 'Initial OCS mapping' "$artifact_root/bfrt-initialize.log"
 
 echo "Tofino model verification passed for $program_name."
