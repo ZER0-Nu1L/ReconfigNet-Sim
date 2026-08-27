@@ -152,3 +152,10 @@ flowchart LR
 - 实验性实现只有在配置、失败语义、测试和文档能够共同维护后，才进入 supported 状态。
 
 [Draft/YANG 支持矩阵](docs/ocs-model-support.md)、[控制语义](docs/ocs-control-semantics.md)和[历史归档](docs/archive/README.md)记录当前 contract 及其演进。
+
+## 许可证与来源说明
+
+项目自行编写的代码和文档使用 [MIT License](LICENSE)。Tofino common P4
+源码保留了 Intel 在公开 Open P4 Studio 发布版本中的 Apache-2.0 归属；
+具体来源和本仓库的局部修改记录在[第三方说明](THIRD_PARTY_NOTICES.md)中。
+固定版本的 P4App 子模块则保留其自身的 Apache-2.0 许可证。

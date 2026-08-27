@@ -13,6 +13,11 @@ Read the project [simulation boundaries](../../docs/ocs-simulation-principles-an
 - a Python runtime that can import the installed BFRT client packages;
 - the Go Agent binary when using `go-split-grpc`.
 
+Set `SDE_INSTALL` to the BF-SDE installation before starting the launcher.
+`OCS_PYTHON_RUNTIME` may be set when the Agent Python package is installed
+outside this repository; otherwise the repository's `agent/python` directory is
+used. No machine-specific SDE or checkout path is assumed by the launcher.
+
 Real addresses and port mappings must not be committed as portable defaults. Keep them in a deployment repository or a local ignored configuration.
 
 > [!WARNING]
@@ -80,6 +85,7 @@ The common `mode: l3` field is endpoint forwarding configuration, and `enable_de
 
 ```bash
 cd targets/tofino/runtime
+export SDE_INSTALL=/path/to/bf-sde/install
 ./run_agent.sh /absolute/path/to/tofino-agent.json
 ```
 

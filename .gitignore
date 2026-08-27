@@ -4,6 +4,16 @@
 ### My Project ###
 */pcap_output
 
+# Site-specific deployment material. Keep real addresses, port mappings,
+# credentials and generated artifacts outside the portable repository.
+*.local.json
+*.local.yaml
+*.site.json
+*.site.yaml
+*.secret
+*.secrets
+*.credentials
+
 ### C ###
 # Prerequisites
 *.d

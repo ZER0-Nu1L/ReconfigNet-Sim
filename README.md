@@ -152,3 +152,11 @@ The roadmap is governed by evidence rather than fixed dates:
 - an experimental implementation becomes supported only after its configuration, failure semantics, tests and documentation are maintained together.
 
 The [Draft/YANG support matrix](docs/ocs-model-support.md), [control semantics](docs/ocs-control-semantics.md) and [historical archive](docs/archive/README.md) record the current contract and its evolution.
+
+## License and Attribution
+
+Project-authored code and documentation are released under the [MIT License](LICENSE).
+The Tofino common P4 sources retain Intel's Apache-2.0 attribution from the
+public Open P4 Studio release; the exact provenance and local modifications are
+recorded in [Third-party notices](THIRD_PARTY_NOTICES.md). The pinned P4App
+submodule carries its own Apache-2.0 license.

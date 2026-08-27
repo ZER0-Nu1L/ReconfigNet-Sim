@@ -11,8 +11,13 @@ shift
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 repository_dir=$(cd "$script_dir/../../.." && pwd)
-sde_install=${SDE_INSTALL:-/root/bf-sde-9.3.1/install}
-python_runtime=${OCS_PYTHON_RUNTIME:-/root/wcb/ocs-agent-python}
+if [[ -z "${SDE_INSTALL:-}" ]]; then
+    echo "SDE_INSTALL must point to the BF-SDE install directory" >&2
+    exit 2
+fi
+
+sde_install="$SDE_INSTALL"
+python_runtime=${OCS_PYTHON_RUNTIME:-"$repository_dir/agent/python"}
 
 export SDE_INSTALL="$sde_install"
 export PYTHONPATH="$python_runtime:$repository_dir/agent/python:$sde_install/lib/python2.7/site-packages:$sde_install/lib/python2.7/site-packages/tofino${PYTHONPATH:+:$PYTHONPATH}"
