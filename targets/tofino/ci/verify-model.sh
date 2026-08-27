@@ -156,10 +156,14 @@ kill -0 "$switchd_pid"
 
 export OCS_CONFIG_FILE="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
 export OCS_NET_CTRL_DIR="$repository_root/targets/tofino/runtime"
+command_file="$build_root/initialize-bfrt.cli"
+printf 'bfrt_python %s\nexit\n' \
+    "$repository_root/targets/tofino/runtime/initialize_dataplane.py" \
+    >"$command_file"
 (
     cd "$build_root"
     "$SDE/run_bfshell.sh" \
-        -b "$repository_root/targets/tofino/runtime/initialize_dataplane.py" \
+        -f "$command_file" \
         --status-port 7777
 ) 2>&1 | tee "$artifact_root/bfrt-initialize.log"
 
