@@ -168,11 +168,12 @@ bootstrap_file="$build_root/initialize-bfrt.py"
 # inherited by that process.
 printf '%s\n' \
     'import os' \
-    'import runpy' \
     "os.environ['OCS_CONFIG_FILE'] = '$config_file'" \
     "os.environ['OCS_NET_CTRL_DIR'] = '$repository_root/targets/tofino/runtime'" \
     "os.environ['OCS_BFRT_INIT_MARKER'] = '$runtime_marker_file'" \
-    "runpy.run_path('$repository_root/targets/tofino/runtime/initialize_dataplane.py', run_name='__main__')" \
+    "_ocs_script = '$repository_root/targets/tofino/runtime/initialize_dataplane.py'" \
+    "with open(_ocs_script, 'rb') as _ocs_source:" \
+    "    exec(compile(_ocs_source.read(), _ocs_script, 'exec'), globals(), globals())" \
     >"$bootstrap_file"
 
 command_file="$build_root/initialize-bfrt.cli"
