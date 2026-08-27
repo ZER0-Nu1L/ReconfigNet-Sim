@@ -1,0 +1,37 @@
+#!/usr/bin/python
+import os, sys
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from config.device_profile import get_host_interface
+
+import argparse
+from scapy.all import IP, sniff
+
+def handle_pkt(pkt):
+    print("="*50)
+    print("Receive packet:")
+    pkt.show()
+
+    if IP in pkt:
+        ip_layer = pkt[IP]
+        print("IP: srcIP %s -> dstIP %s" % (ip_layer.src, ip_layer.dst))
+    else:
+        print("IP layer not found in packet")
+
+def main():
+    if os.getuid() != 0:
+        print("ERROR: This script requires root privileges.\n Use 'sudo' to run it.")
+        quit()
+    
+    parser = argparse.ArgumentParser(description="Receive packets on the interface corresponding to the given host id")
+    parser.add_argument("--host", type=int, required=True, help="Host id to use for receiving packets")
+    args = parser.parse_args()
+    
+    iface = get_host_interface(args.host)
+    print("Sniffing on interface:", iface)
+    print("Press Ctrl-C to stop...")
+    sniff(iface=iface, prn=lambda pkt: handle_pkt(pkt))
+
+if __name__ == '__main__':
+    main()

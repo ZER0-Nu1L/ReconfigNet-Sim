@@ -1,0 +1,9 @@
+[allowlist]
+description = "Generated protobuf descriptor sentinel, not a credential"
+paths = [
+  '''agent/python/ocs_agent/proto/.*_pb2\.py$''',
+]
+regexTarget = "match"
+regexes = [
+  '''_descriptor\._internal_create_key''',
+]

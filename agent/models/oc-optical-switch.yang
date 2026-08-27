@@ -1,0 +1,56 @@
+module oc-optical-switch {
+  yang-version 1.1;
+  namespace "http://reconfig-net.local/yang/oc-optical-switch-draft-profile";
+  prefix oc-optical-switch;
+
+  organization
+    "ReconfigNet-Sim experimental profile";
+  description
+    "Experimental realization of the optical switch portion of the OCS API
+     working draft. Unsupported leaves remain in the schema so capabilities
+     can report them explicitly.";
+
+  revision 2026-08-25 {
+    description
+      "Initial P4app profile derived from the OCS API working draft.";
+  }
+
+  typedef recovery-behavior {
+    type enumeration {
+      enum RECOVER;
+      enum DONT_RECOVER;
+    }
+  }
+
+  typedef recovery-capability {
+    type enumeration {
+      enum PERSISTENT;
+      enum WARM_BOOT_AND_COLD_BOOT_NVM;
+      enum ALWAYS_FROM_NVM;
+      enum NO_RECOVERY;
+    }
+  }
+
+  container optical-switch {
+    container config;
+    container state {
+      config false;
+    }
+    container port-connection-recovery {
+      container config {
+        leaf port-connection-recovery-behavior {
+          type recovery-behavior;
+        }
+      }
+      container state {
+        config false;
+        leaf port-connection-recovery-behavior {
+          type recovery-behavior;
+        }
+        leaf port-connection-recovery-capability {
+          type recovery-capability;
+        }
+      }
+    }
+  }
+}

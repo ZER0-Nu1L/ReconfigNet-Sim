@@ -1,0 +1,4 @@
+[submodule "third_party/p4app"]
+	path = third_party/p4app
+	url = https://github.com/p4lang/p4app
+	branch = rc-2.0.0

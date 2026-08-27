@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+  - package-ecosystem: gomod
+    directory: "/agent/go"
+    schedule:
+      interval: monthly
+  - package-ecosystem: pip
+    directory: "/agent/python"
+    schedule:
+      interval: monthly

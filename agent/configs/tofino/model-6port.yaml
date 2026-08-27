@@ -1,0 +1,32 @@
+profile: tofino-6port-v1
+capability-profile: capabilities.yaml
+
+openconfig-platform:components:
+  component:
+    - {name: port-1, index: 1}
+    - {name: port-2, index: 2}
+    - {name: port-3, index: 3}
+    - {name: port-4, index: 4}
+    - {name: port-5, index: 5}
+    - {name: port-6, index: 6}
+
+oc-optical-switch-connections:optical-switch-connections:
+  port-connection:
+    - connection-name: conn-port-1-port-6
+      config:
+        connection-name: conn-port-1-port-6
+        bidirectional: true
+        near-port-name: port-1
+        far-port-name: port-6
+    - connection-name: conn-port-2-port-3
+      config:
+        connection-name: conn-port-2-port-3
+        bidirectional: true
+        near-port-name: port-2
+        far-port-name: port-3
+    - connection-name: conn-port-4-port-5
+      config:
+        connection-name: conn-port-4-port-5
+        bidirectional: true
+        near-port-name: port-4
+        far-port-name: port-5
