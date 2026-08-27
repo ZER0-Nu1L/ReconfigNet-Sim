@@ -1,0 +1,166 @@
+name: Tofino model
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tofino-model-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: Compile Tofino pipeline
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Load immutable image lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - .github/tofino-image-lock.json <<'PY' >> "$GITHUB_ENV"
+          import json
+          import pathlib
+          import re
+          import sys
+
+          lock_path = pathlib.Path(sys.argv[1])
+          lock = json.loads(lock_path.read_text(encoding="utf-8"))
+          image = lock.get("image", "")
+          expected = (
+              "ghcr.io/zer0-nu1l/open-p4studio-container@"
+              r"sha256:[0-9a-f]{64}"
+          )
+          if not re.fullmatch(expected, image):
+              raise SystemExit("image lock must contain an immutable GHCR digest")
+          if lock.get("platform") != "linux/amd64":
+              raise SystemExit("image lock platform must remain linux/amd64")
+          print("TOFINO_IMAGE=" + image)
+          PY
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull immutable Open P4 Studio image
+        run: docker pull "$TOFINO_IMAGE"
+
+      - name: Verify image contract
+        run: |
+          set -euo pipefail
+          docker run --rm "$TOFINO_IMAGE" bash -ceu '
+            test "$SDE" = /opt/open-p4studio
+            test "$SDE_INSTALL" = /opt/open-p4studio/install
+            test -x "$SDE_INSTALL/bin/bf-p4c"
+            test -x "$SDE_INSTALL/bin/tofino-model"
+            test -x "$SDE_INSTALL/bin/bf_switchd"
+            test -x /usr/local/bin/open-p4studio-selftest
+          '
+
+      - name: Compile project pipeline and runtime tests
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/tofino-compile
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace/ReconfigNet-Sim:ro" \
+            --volume "$GITHUB_WORKSPACE/artifacts/tofino-compile:/artifacts" \
+            --workdir /workspace/ReconfigNet-Sim \
+            "$TOFINO_IMAGE" \
+            bash -ceu 'bash targets/tofino/ci/verify-model.sh /artifacts --compile-only'
+
+      - name: Upload Tofino compile evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tofino-compile-${{ github.run_id }}
+          path: artifacts/tofino-compile
+          if-no-files-found: warn
+          retention-days: 14
+
+  model:
+    name: Load and initialize Tofino model
+    needs: compile
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Load immutable image lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - .github/tofino-image-lock.json <<'PY' >> "$GITHUB_ENV"
+          import json
+          import pathlib
+          import re
+          import sys
+
+          lock_path = pathlib.Path(sys.argv[1])
+          lock = json.loads(lock_path.read_text(encoding="utf-8"))
+          image = lock.get("image", "")
+          expected = (
+              "ghcr.io/zer0-nu1l/open-p4studio-container@"
+              r"sha256:[0-9a-f]{64}"
+          )
+          if not re.fullmatch(expected, image):
+              raise SystemExit("image lock must contain an immutable GHCR digest")
+          if lock.get("platform") != "linux/amd64":
+              raise SystemExit("image lock platform must remain linux/amd64")
+          print("TOFINO_IMAGE=" + image)
+          PY
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull immutable Open P4 Studio image
+        run: docker pull "$TOFINO_IMAGE"
+
+      - name: Load and initialize project pipeline in Tofino model
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/tofino-model
+          docker run --rm --privileged \
+            --volume "$GITHUB_WORKSPACE:/workspace/ReconfigNet-Sim:ro" \
+            --volume "$GITHUB_WORKSPACE/artifacts/tofino-model:/artifacts" \
+            --workdir /workspace/ReconfigNet-Sim \
+            "$TOFINO_IMAGE" \
+            bash -ceu 'bash targets/tofino/ci/verify-model.sh /artifacts'
+
+      - name: Upload Tofino model evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tofino-model-${{ github.run_id }}
+          path: artifacts/tofino-model
+          if-no-files-found: warn
+          retention-days: 14
