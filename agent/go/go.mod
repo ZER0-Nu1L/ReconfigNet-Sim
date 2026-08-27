@@ -5,7 +5,7 @@ go 1.25
 require (
 	github.com/openconfig/gnmi v0.14.1
 	google.golang.org/grpc v1.75.1
-	google.golang.org/protobuf v1.36.9
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
 
