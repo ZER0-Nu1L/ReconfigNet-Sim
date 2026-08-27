@@ -5,6 +5,9 @@
 
 本表保留 API Proposal draft 的基本实体和命名，但只声明真实实现或明确推导的能力。未实现字段必须返回明确错误或不出现在 capability 中，不能静默接受。
 
+> [!IMPORTANT]
+> `UNSUPPORTED` 和 `OUT_OF_SCOPE` 都是当前 contract 的明确边界；它们不是“稍后会自动工作”的兼容占位。调用方应根据 capability 和结构化错误处理这些状态。
+
 状态含义：
 
 - ✅ `SUPPORTED`：存在真实读写或执行逻辑；

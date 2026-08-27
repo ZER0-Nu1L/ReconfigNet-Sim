@@ -80,6 +80,9 @@ flowchart LR
 
 同一设备同一时刻只能由一个 profile 持有。Tofino launcher 使用 ownership lock 防止两个 Agent 同时写 BFRT。
 
+> [!WARNING]
+> 同一设备同一时刻只能有一个 OCS Agent profile 持有写入权。不要让两个 Agent、两个 profile 或两个 backend 同时操作同一张设备表。
+
 ## 3. 共享语义
 
 两个 profile 共享以下控制语义：
@@ -96,6 +99,8 @@ flowchart LR
 HTTP profile 仍实现上述统一 Agent Core 语义，不恢复早期无 lease、无 revision 的 legacy fast path。差异只在 wire protocol 和进程边界。
 
 Draft/YANG 支持范围见 [OCS model support](./ocs-model-support.md)，更精确的事务约束见 [OCS control semantics](./ocs-control-semantics.md)。
+
+诊断用的 all-to-all runtime 行为不是第三种部署 profile；其数据面实现、mode transition 和使用流程见 [Debug Mode](./debug-mode.md)。
 
 ## 4. 两条执行路径
 

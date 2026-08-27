@@ -2,6 +2,9 @@
 
 此目录保存双 Frontier 定案前的设计、迁移和性能分析。内容用于复核决策，不代表当前可部署 runtime 或配置格式。
 
+> [!NOTE]
+> 这里的文档保留历史背景和证据。当前实现、配置键和支持范围以仓库主文档为准，不应直接从归档内容复制旧 runtime 方案。
+
 | 文档 | 历史范围 |
 | --- | --- |
 | [API 设计与迁移方案](./ocs-agent-api-migration-design.md) | Python/Go、HTTP/gRPC、monolith/split 的候选矩阵和 Draft 解读 |

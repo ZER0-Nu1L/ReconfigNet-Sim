@@ -2,13 +2,18 @@
 
 This repository implements an IPv4/MAC packet-level simulation of an optical circuit switch. It is not a transparent optical OCS: the P4 pipeline parses packets, decrements TTL, recomputes the IPv4 header checksum and applies endpoint forwarding entries.
 
+The higher-level project motivation, assumptions and physical boundary are documented in [OCS simulation principles and boundaries](./ocs-simulation-principles-and-boundaries.md).
+
+> [!IMPORTANT]
+> A successful southbound ACK or software readback confirms a control-plane boundary only. It does not mean that a physical optical path has switched, a link has recovered or packets are already flowing on the new path.
+
 ## State representations
 
 `ConnectionSet` is the authoritative agent representation. It contains named, bidirectional point-to-point connections and may be sparse: unused ports are legal.
 
 `pi` is a compact batch representation for a complete fixed-point-free symmetric permutation. Every active port appears exactly once and applying the mapping twice returns the source slot. A sparse `ConnectionSet` cannot be represented as `pi`; in that case `GetPermutation` fails with `FAILED_PRECONDITION` and HTTP `GET /ocs_mapping` returns 409.
 
-Debug mode installs every non-self source/destination pair. Full mesh is diagnostic behavior and is neither a `ConnectionSet` matching nor a valid `pi`.
+Debug Mode installs every non-self source/destination pair. Full connectivity is diagnostic behavior and is neither a `ConnectionSet` matching nor a valid `pi`; it remains limited to the supported IPv4/MAC packet pipeline. Mode transitions, retained desired state, API errors and capacity requirements are defined in [Debug Mode](./debug-mode.md).
 
 ## Controller and agent boundary
 
@@ -54,6 +59,9 @@ P4App defaults to `CACHED_SYNC`; Tofino defaults to `CACHED_ACK`. In the split p
 P4app reports `TUNED`, `CONNECTED`, peer and connected state only after table readback matches the target. These values are derived state; they do not prove optical power, MEMS position, BER or physical link health. Unsupported counters are omitted rather than synthesized from unrelated packet counters.
 
 Unsupported model fields and RPC features fail explicitly. The P4app profile does not silently accept recovery configuration, multicast, SOA, port metadata writes, gNMI Subscribe, leaf-level update or unknown YAML fields.
+
+> [!WARNING]
+> Unsupported or out-of-scope model fields must remain explicit failures. Do not make a request appear successful by silently ignoring fields that the current profile cannot enforce.
 
 `FakeSwitch` and in-memory test doubles are used only for deterministic unit tests and failure injection. They are not an inter-process production layer and do not provide authoritative performance results; those require the real BMv2/P4Runtime closed loop.
 

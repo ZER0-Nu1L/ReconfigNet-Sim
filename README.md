@@ -1,155 +1,154 @@
 # ReconfigNet-Sim
 
-ReconfigNet-Sim uses programmable switches to simulate a reconfigurable optical circuit switch. It supports a BMv2/P4App backend and a Tofino/BFRT backend with one shared OCS model and transaction contract.
+[中文](README-zh.md)
 
-## Current OCS architecture
+ReconfigNet-Sim is a programmable-switch platform for low-cost investigation of the system-integration, control and deployment problems surrounding reconfigurable optical networks.
 
-Only two deployment profiles are supported:
+## Motivation
 
-| Profile | Northbound interface | Device path | Purpose |
-| --- | --- | --- | --- |
-| `python-monolith-http-direct` | Python HTTP | in-process P4Runtime/BFRT backend | Minimum control latency |
-| `go-split-grpc` | Go gRPC/gNMI | UDS → Python Device Worker → dedicated backend executor | Typed YANG contract and vendor SDK isolation |
+The central motivation is to use emulation not merely to reproduce an OCS data plane, but to expose, study, and de-risk the system-integration problems surrounding reconfigurable networks before real optical hardware is available.
 
-Both profiles retain the YAML model, named connections, strict `pi` validation, lease/revision checks, FULL/DELTA updates, structured errors and rollback semantics. Python split, Python gRPC NBI and Go HTTP NBI are historical implementations and have been removed from the active source tree.
+Reconfigurable optical circuit switch (OCS) hardware is still difficult to obtain and operate. Many devices remain research prototypes or early products, production volume is limited, software support is incomplete and the cost of building a representative optical testbed is high.
 
-Start with:
+This scarcity creates a system-integration gap. Schedulers, controllers, endpoint configuration, topology assumptions, deployment automation and failure handling are often developed before teams can exercise them against a real OCS. Problems in those layers then remain hidden until scarce hardware becomes the integration point.
 
-- [OCS Agent current architecture](docs/ocs-agent-architecture.md)
-- [Draft/YANG support matrix](docs/ocs-model-support.md)
-- [Control semantics](docs/ocs-control-semantics.md)
-- [Historical architecture evidence](docs/archive/README.md)
+ReconfigNet-Sim uses programmable-switch emulation to expose those problems earlier. It is not a replacement for optical validation. It is reusable research infrastructure for developing the surrounding system, making control behavior measurable and documenting which conclusions do and do not transfer to a physical OCS.
 
-## Repository layout
+> [!NOTE]
+> ReconfigNet-Sim is research infrastructure for system-integration experiments. It is not a substitute for optical validation, and results should be interpreted only within the documented model boundary.
 
-```text
-agent/                       shared model, contracts, Python Agent and Go Agent
-benchmarks/                  protocol, profile and reconfiguration benchmarks
-targets/p4app/               BMv2/P4App data plane and runtime integration
-targets/tofino/              Tofino P4 program and BFRT runtime integration
-third_party/p4app/           pinned upstream P4App runner
-docs/                        current architecture and archived decision evidence
+## What the Platform Covers
+
+The platform covers the system behavior needed to investigate reconfigurable-network integration. The exact model evolves with the surrounding research, but commonly includes:
+
+- control and orchestration logic around dynamically reconfigurable networks;
+- endpoint, topology and deployment assumptions that affect system integration;
+- connection workflows, state transitions, validation, recovery and failure handling;
+- interactions among clients, controllers, Agents, device backends and programmable-switch targets;
+- measurement hooks for control paths and data-plane consequences.
+
+The executable model and transaction details are deliberately kept in the [OCS Agent architecture](docs/ocs-agent-architecture.md), [control semantics](docs/ocs-control-semantics.md) and [simulation boundaries](docs/ocs-simulation-principles-and-boundaries.md) documents so they can evolve without changing the project’s high-level promise.
+
+## What We Do NOT Emulate
+
+ReconfigNet-Sim does not emulate or measure:
+
+- optical propagation, insertion loss, optical power, BER or signal quality;
+- MEMS, silicon-photonic or other physical switching mechanisms;
+- transceiver tuning, laser behavior or wavelength-dependent behavior;
+- physical link loss and reacquisition;
+- PHY training, NIC initialization or driver recovery;
+- transparent forwarding of arbitrary L1/L2 protocols;
+- the data-plane atomicity or exact timing of a real optical reconfiguration.
+
+These omissions are deliberate. They keep the model useful without presenting packet-switch state as optical truth. See [OCS simulation principles and boundaries](docs/ocs-simulation-principles-and-boundaries.md) for the precise assumptions.
+
+> [!WARNING]
+> A packet-level result from ReconfigNet-Sim must not be read as evidence of optical switching time, physical link recovery, or end-to-end OCS equivalence.
+
+## Why P4?
+
+A P4 switch provides a controllable approximation boundary within which a large class of OCS system-integration questions can be investigated before—and alongside—real hardware.
+
+P4 gives this project a useful pair of experimental layers:
+
+- **BMv2/P4App** provides a software target that is inexpensive, reproducible and fast to iterate. It is well suited to early controller, endpoint, deployment and failure-workflow experiments.
+- **Tofino** provides a more mature programmable-hardware path with a packet-processing pipeline and BF-SDE/BFRT development environment. It lets the same integration questions be tested closer to a production programmable-switch deployment.
+
+Neither layer supplies optical behavior. BMv2/P4App can have weaker fidelity when experiments depend on real RDMA NIC interaction, PHY behavior, link training or hardware timing. Tofino narrows some programmable-hardware and deployment gaps, but it remains an electrical packet switch and does not reproduce optical switching mechanisms.
+
+The broader P4 development environment is available through [Open P4 Studio](https://github.com/p4lang/open-p4studio). This project uses P4 as an experimental boundary, not as a claim that a packet switch is a physical OCS.
+
+> [!NOTE]
+> BMv2/P4App and Tofino are complementary programmable-switch validation layers: BMv2 favors fast, reproducible iteration, while Tofino exercises a closer hardware and deployment path. Neither one adds optical fidelity.
+
+## Research Questions Enabled
+
+The repository supports experiments around questions such as:
+
+1. Which scheduler, controller, endpoint and deployment assumptions fail when OCS-style connectivity becomes dynamically reconfigurable?
+2. When device reconfiguration approaches sub-millisecond time scales, which portions of the control path become the bottleneck?
+3. Which connection, batch, conflict, failure, rollback and recovery semantics are required for safe integration?
+4. How do static neighbors, host routing, transport behavior and application recovery interact with a changing topology?
+5. Can a future hybrid optical design keep adjacent electrical L1/L2 links established and change only an internal path, avoiding expensive endpoint link restart?
+
+## Design Principles
+
+- **Stable logical OCS abstraction.** Controllers address logical ports and connections rather than P4Runtime, BFRT or vendor-specific identifiers.
+- **Explicit emulation boundary.** Desired state, backend acknowledgement and software readback are distinguished from physical optical state.
+- **Measurable control path.** Validation, queuing, planning, delete, gap, install, readback and rollback timing remain separately observable.
+- **Hardware and emulator portability.** The same connection semantics are retained across software P4 and P4 hardware backends.
+- **Debug Mode for staged bring-up.** A diagnostic full-connectivity mode lets operators validate the packet network before enabling OCS matching. Its behavior and limitations are documented in [Debug Mode](docs/debug-mode.md).
+- **Evidence before equivalence.** Results obtained from a packet switch are not described as real OCS behavior without a corresponding physical-hardware experiment.
+
+> [!IMPORTANT]
+> Debug Mode is for staged packet-network bring-up only. Disable it before OCS acceptance, matching, blackout, or connection-semantics measurements.
+
+## Architecture
+
+The stable project boundary is the logical OCS model and transaction semantics. Deployment-specific protocols and device SDKs sit behind that boundary:
+
+```mermaid
+flowchart LR
+    R[Scheduler / experiment] --> C[Logical OCS control interface]
+    C --> A[OCS Agent]
+    A --> B[Backend adapter]
+    B --> P[BMv2 / P4 hardware]
+    B -. future backend .-> O[Real OCS]
 ```
 
-The P4App tree does not contain copies of shared Agent, protobuf, Go or YANG sources. Docker builds copy the canonical `agent/` tree.
+Two deployment profiles are currently maintained because they represent different engineering frontiers:
 
-## P4App
+| Profile | Primary objective | Boundary |
+| --- | --- | --- |
+| `python-monolith-http-direct` | Minimum single-request control latency | Python HTTP Agent Core and selected backend run in one process |
+| `go-split-grpc` | Typed model, explicit backend contract and vendor SDK isolation | Go gRPC/gNMI Agent Core calls a Python Device Worker |
 
-The rc2 P4App implementation runs in Docker.
+This table is intentionally only an orientation. Process boundaries, consistency modes, API behavior and backend ownership are documented in [OCS Agent architecture](docs/ocs-agent-architecture.md). P4App and Tofino operating instructions live with their targets: [P4App](targets/p4app/README.md) and [Tofino](targets/tofino/README.md).
 
-```bash
-cd targets/p4app
-make image
-make run
-```
+## Performance / Measurements
 
-The default config is `agent/configs/p4app/python-monolith-http-direct.json`, which selects `python-monolith-http-direct`, listens on HTTP port 5000 and uses `CACHED_SYNC`.
+Control latency is a first-class research variable. A fast physical switch does not produce a fast system if request serialization, network RTT, validation, process boundaries, SDK calls or device readback dominate the reconfiguration interval.
 
-To run the Go split profile:
+Measurements in this project therefore identify at least:
 
-```bash
-P4APP_CONTAINER_ARGS='-e OCS_CONFIG_FILE=/opt/ocs-agent/configs/p4app/go-split-grpc.json' \
-  make run
-```
+- client implementation and client-to-Agent RTT;
+- northbound protocol and Agent deployment profile;
+- Agent Core, Worker and process boundaries;
+- P4Runtime, BFRT or future vendor backend;
+- consistency mode and readback boundary;
+- FULL or DELTA execution and sequential or native-batch transport;
+- requested gap, control-plane completion and, when available, observed packet blackout.
 
-The Go profile listens on gRPC port 9339 and uses a Unix-domain DeviceBackend socket inside the container.
+The two maintained profiles should be treated as separate Pareto frontiers, not as proof that HTTP or gRPC is universally faster. Current instrumentation is described in the [architecture document](docs/ocs-agent-architecture.md); historical architecture comparisons and benchmark evidence are preserved in [docs/archive](docs/archive/README.md).
 
-### HTTP example
+## Validation with Real OCS Hardware
 
-Every write requires a control lease and the current expected revision:
+The maintainers use this repository in ongoing OCS systems research and also have access to real OCS hardware. A public, reproducible emulator-versus-real-OCS comparison has not yet been published in this repository.
 
-```python
-import http.client
-import json
+> [!NOTE]
+> No public, reproducible emulator-versus-real-OCS comparison is currently included. Claims about physical OCS behavior require separately identified hardware evidence.
 
+Until such artifacts are available, ReconfigNet-Sim does not claim physical equivalence. A future validation report must identify the device, topology, endpoint behavior, timing boundaries, control path, L1/L2 events and raw measurement artifacts instead of comparing only one aggregate latency number.
 
-def call(method, path, payload=None, headers=None):
-    connection = http.client.HTTPConnection('127.0.0.1', 5000)
-    body = json.dumps(payload) if payload is not None else None
-    request_headers = {'Content-Type': 'application/json'} if body else {}
-    request_headers.update(headers or {})
-    connection.request(method, path, body=body, headers=request_headers)
-    response = connection.getresponse()
-    result = json.loads(response.read().decode('utf-8'))
-    connection.close()
-    return response.status, result
+## Limitations
 
+- The current data plane is an IPv4/MAC packet-level approximation, not a protocol-transparent optical path.
+- ARP is not forwarded by the supported OCS pipelines, so experiments normally require preconfigured neighbor state.
+- The electrical links remain up while OCS permission entries change; link-down/up and NIC recovery behavior are bypassed.
+- `CONNECTED`, `TUNED` and peer state are derived from desired state, backend acknowledgement and readback, not optical telemetry.
+- Debug Mode provides many-to-many packet reachability and must not be used to validate 1:1 OCS connection semantics.
+- Available logical-port scale is constrained by the programmed table capacity and target resources.
+- Site-specific addresses, MACs, physical ports and acceptance results belong in deployment repositories or external artifacts.
 
-_, lease = call('POST', '/ocs_control/acquire', {'client_id': 'example'})
-headers = {
-    'X-OCS-Control-Lease': lease['lease_token'],
-    'X-OCS-Expected-Revision': str(lease['revision']),
-}
-status, result = call('POST', '/ocs_mapping', {
-    'new_pi': [4, 3, 2, 1, 8, 7, 6, 5],
-    'strategy': 'DELTA',
-    'transport': 'NATIVE_BATCH',
-}, headers)
-print(status, result)
-```
+## Roadmap
 
-### gRPC example
+The roadmap is governed by evidence rather than fixed dates:
 
-The image contains an operational client that manages lease and revision automatically:
+- a new backend must preserve the logical connection and transaction contract and keep device-specific identifiers behind its adapter;
+- a new fidelity claim must state which behavior is reproduced, derived, approximated or outside the model;
+- a performance conclusion must report its complete execution path and retain reproducible raw artifacts;
+- a claim about real OCS behavior requires a corresponding physical-hardware experiment;
+- an experimental implementation becomes supported only after its configuration, failure semantics, tests and documentation are maintained together.
 
-```bash
-third_party/p4app/p4app exec /usr/local/bin/ocs-control \
-  --target 127.0.0.1:9339 \
-  --operation apply \
-  --pi 4,3,2,1,8,7,6,5 \
-  --strategy delta \
-  --transport native-batch
-```
-
-Use gNMI `Set` for named per-connection create/replace/delete and sparse connection sets. Use `OcsOperations.ApplyBatch` for a complete named set or strict `pi` batch.
-
-## Tofino
-
-Tofino requires a matching BF-SDE environment and `bf_switchd` exposing external BF Runtime gRPC. The Agent uses an explicit site-specific JSON profile; real addresses, physical ports and logical-to-dev_port mappings must stay in the deployment repository.
-
-```bash
-cd targets/tofino/runtime
-./run_agent.sh /absolute/path/to/tofino-agent.json
-```
-
-The normal Tofino deployment selects `go-split-grpc` with `CACHED_ACK`. `python-monolith-http-direct` remains available when minimum API latency is more important than the explicit Worker contract. Its HTTP listener must not use port 5000 while the BF-SDE control process owns that socket. The embedded `initialize_dataplane.py` only initializes data-plane tables; it no longer exposes an independent REST writer.
-
-Only one Agent may own a Tofino device. The launcher enforces a BFRT ownership lock.
-
-## Tests
-
-```bash
-# Shared Python semantics, P4Runtime adapter and BFRT adapter
-PYTHONPATH="$PWD/agent/python:$PWD:$PWD/targets/p4app" \
-  PYTHONDONTWRITEBYTECODE=1 \
-  python3 -m unittest discover -s agent/python/tests -v
-
-# Go Core and gRPC/gNMI implementation
-cd agent/go
-go test ./...
-go test -race ./...
-
-# Pinned Python 3.5 P4App image and YANG validation
-cd ../../targets/p4app
-make test-container
-```
-
-## Performance collection
-
-Performance reports must record deployment profile, client language, client-to-Agent RTT, backend, consistency mode, FULL/DELTA strategy and transport. The current collector accepts only the two supported profiles:
-
-```bash
-make benchmark-matrix-collect \
-  PROFILE=python-monolith-http-direct \
-  OUTPUT=python-http.json
-
-make benchmark-matrix-collect \
-  PROFILE=go-split-grpc \
-  OUTPUT=go-grpc.json
-
-python3 ../../benchmarks/profile_matrix.py report \
-  --input python-http.json \
-  --input go-grpc.json
-```
-
-The report includes the absolute microsecond cost of the split frontier relative to the monolith frontier. Historical Python/Go × HTTP/gRPC matrices and dedicated-thread root-cause data are archived under `docs/archive/`; raw benchmark JSON belongs in the external artifact store rather than the active source tree.
+The [Draft/YANG support matrix](docs/ocs-model-support.md), [control semantics](docs/ocs-control-semantics.md) and [historical archive](docs/archive/README.md) record the current contract and its evolution.
