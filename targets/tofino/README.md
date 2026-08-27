@@ -13,6 +13,23 @@ Read the project [simulation boundaries](../../docs/ocs-simulation-principles-an
 - a Python runtime that can import the installed BFRT client packages;
 - the Go Agent binary when using `go-split-grpc`.
 
+## Reproducible model CI
+
+The repository's [Tofino model workflow](../../.github/workflows/tofino-model.yml)
+consumes the independent
+[`open-p4studio-container`](https://github.com/ZER0-Nu1L/open-p4studio-container)
+release by the immutable digest recorded in
+[`tofino-image-lock.json`](../../.github/tofino-image-lock.json). The workflow
+mounts this repository read-only, compiles `ocs.p4`, runs the target-neutral
+runtime tests, loads the generated pipeline into the Tofino 1 model, and
+initializes the site-neutral BFRT profile.
+
+The job runs on a privileged `linux/amd64` GitHub runner because the model
+needs veth interfaces and huge pages. It validates compilation and model/BFRT
+integration only; it does not validate a physical Tofino board or any
+site-specific port mapping. Update the lock only from a reviewed release
+`image-lock.json`; do not replace it with a floating tag.
+
 Set `SDE_INSTALL` to the BF-SDE installation before starting the launcher.
 `OCS_PYTHON_RUNTIME` may be set when the Agent Python package is installed
 outside this repository; otherwise the repository's `agent/python` directory is
