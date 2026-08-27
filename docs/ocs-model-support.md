@@ -44,7 +44,7 @@
 
 机器可读事实来源：
 
-- `ocs.agent/config/p4app-capabilities.yaml`；
-- `ocs.agent/config/tofino-capabilities.yaml`。
+- `agent/configs/p4app/capabilities.yaml`；
+- `agent/configs/tofino/capabilities.yaml`。
 
 测试会校验 capability YAML 与本表的 ID、状态和 icon 一致。

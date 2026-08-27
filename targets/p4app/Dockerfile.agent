@@ -1,0 +1,30 @@
+FROM golang:1.25 AS go-builder
+
+WORKDIR /src/go-agent
+COPY agent/go/go.mod agent/go/go.sum ./
+RUN go mod download
+COPY agent/go/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+      -o /out/ocs-go-agent ./cmd/ocs-go-agent && \
+    CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+      -o /out/ocs-benchmark ./cmd/ocs-benchmark && \
+    CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+      -o /out/ocs-control ./cmd/ocs-control && \
+    CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+      -o /out/ocs-reconfig-probe ./cmd/ocs-reconfig-probe
+
+FROM p4lang/p4app:rc-2.0.0
+
+COPY agent/python/requirements-runtime.txt /tmp/requirements-runtime.txt
+RUN pip3 install --no-cache-dir --upgrade pip==20.3.4 && \
+    PYTHONPATH=/usr/local/lib/python3.5/dist-packages \
+      python3 -S -m pip install --no-cache-dir \
+      -r /tmp/requirements-runtime.txt && \
+    rm -f /tmp/requirements-runtime.txt
+
+COPY --from=go-builder /out/ocs-go-agent /usr/local/bin/ocs-go-agent
+COPY --from=go-builder /out/ocs-benchmark /usr/local/bin/ocs-benchmark
+COPY --from=go-builder /out/ocs-control /usr/local/bin/ocs-control
+COPY --from=go-builder /out/ocs-reconfig-probe /usr/local/bin/ocs-reconfig-probe
+COPY agent/ /opt/ocs-agent/
+COPY benchmarks/ /opt/ocs-agent/benchmarks/

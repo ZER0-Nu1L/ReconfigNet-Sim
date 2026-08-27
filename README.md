@@ -18,35 +18,37 @@ Start with:
 - [OCS Agent current architecture](docs/ocs-agent-architecture.md)
 - [Draft/YANG support matrix](docs/ocs-model-support.md)
 - [Control semantics](docs/ocs-control-semantics.md)
-- [Historical architecture evidence](docs/history/README.md)
+- [Historical architecture evidence](docs/archive/README.md)
 
 ## Repository layout
 
 ```text
-ocs.agent/                       shared model, Python Core/Worker, Go Core
-ocs.p4app/ocs.p4app-rc2/         BMv2/P4App data plane and launcher
-ocs.tofino/net-ctrl/             Tofino/BFRT launcher and backend integration
-docs/                            current architecture and historical reports
+agent/                       shared model, contracts, Python Agent and Go Agent
+benchmarks/                  protocol, profile and reconfiguration benchmarks
+targets/p4app/               BMv2/P4App data plane and runtime integration
+targets/tofino/              Tofino P4 program and BFRT runtime integration
+third_party/p4app/           pinned upstream P4App runner
+docs/                        current architecture and archived decision evidence
 ```
 
-The P4App tree does not contain copies of shared Agent, protobuf, Go or YANG sources. Docker builds copy the canonical `ocs.agent/` tree.
+The P4App tree does not contain copies of shared Agent, protobuf, Go or YANG sources. Docker builds copy the canonical `agent/` tree.
 
 ## P4App
 
 The rc2 P4App implementation runs in Docker.
 
 ```bash
-cd ocs.p4app/ocs.p4app-rc2
+cd targets/p4app
 make image
 make run
 ```
 
-The default config is `ocs.agent/config/p4app.json`, which selects `python-monolith-http-direct`, listens on HTTP port 5000 and uses `CACHED_SYNC`.
+The default config is `agent/configs/p4app/python-monolith-http-direct.json`, which selects `python-monolith-http-direct`, listens on HTTP port 5000 and uses `CACHED_SYNC`.
 
 To run the Go split profile:
 
 ```bash
-P4APP_CONTAINER_ARGS='-e OCS_CONFIG_FILE=/opt/ocs-agent/config/p4app-go-split-grpc.json' \
+P4APP_CONTAINER_ARGS='-e OCS_CONFIG_FILE=/opt/ocs-agent/configs/p4app/go-split-grpc.json' \
   make run
 ```
 
@@ -91,7 +93,7 @@ print(status, result)
 The image contains an operational client that manages lease and revision automatically:
 
 ```bash
-ocs.p4app/p4app-rc2/p4app exec /usr/local/bin/ocs-control \
+third_party/p4app/p4app exec /usr/local/bin/ocs-control \
   --target 127.0.0.1:9339 \
   --operation apply \
   --pi 4,3,2,1,8,7,6,5 \
@@ -106,11 +108,11 @@ Use gNMI `Set` for named per-connection create/replace/delete and sparse connect
 Tofino requires a matching BF-SDE environment and `bf_switchd` exposing external BF Runtime gRPC. The Agent uses an explicit site-specific JSON profile; real addresses, physical ports and logical-to-dev_port mappings must stay in the deployment repository.
 
 ```bash
-cd ocs.tofino/net-ctrl
+cd targets/tofino/runtime
 ./run_agent.sh /absolute/path/to/tofino-agent.json
 ```
 
-The normal Tofino deployment selects `go-split-grpc` with `CACHED_ACK`. `python-monolith-http-direct` remains available when minimum API latency is more important than the explicit Worker contract. Its HTTP listener must not use port 5000 while the BF-SDE control process owns that socket. The embedded `setup.py` only initializes data-plane tables; it no longer exposes an independent REST writer.
+The normal Tofino deployment selects `go-split-grpc` with `CACHED_ACK`. `python-monolith-http-direct` remains available when minimum API latency is more important than the explicit Worker contract. Its HTTP listener must not use port 5000 while the BF-SDE control process owns that socket. The embedded `initialize_dataplane.py` only initializes data-plane tables; it no longer exposes an independent REST writer.
 
 Only one Agent may own a Tofino device. The launcher enforces a BFRT ownership lock.
 
@@ -118,17 +120,17 @@ Only one Agent may own a Tofino device. The launcher enforces a BFRT ownership l
 
 ```bash
 # Shared Python semantics, P4Runtime adapter and BFRT adapter
-PYTHONPATH="$PWD/ocs.agent:$PWD/ocs.p4app/ocs.p4app-rc2" \
+PYTHONPATH="$PWD/agent/python:$PWD:$PWD/targets/p4app" \
   PYTHONDONTWRITEBYTECODE=1 \
-  python3 -m unittest discover -s ocs.agent/tests -v
+  python3 -m unittest discover -s agent/python/tests -v
 
 # Go Core and gRPC/gNMI implementation
-cd ocs.agent/go-agent
+cd agent/go
 go test ./...
 go test -race ./...
 
 # Pinned Python 3.5 P4App image and YANG validation
-cd ../../ocs.p4app/ocs.p4app-rc2
+cd ../../targets/p4app
 make test-container
 ```
 
@@ -145,9 +147,9 @@ make benchmark-matrix-collect \
   PROFILE=go-split-grpc \
   OUTPUT=go-grpc.json
 
-python3 ../../ocs.agent/benchmarks/benchmark_matrix.py report \
+python3 ../../benchmarks/profile_matrix.py report \
   --input python-http.json \
   --input go-grpc.json
 ```
 
-The report includes the absolute microsecond cost of the split frontier relative to the monolith frontier. Historical Python/Go × HTTP/gRPC matrices and dedicated-thread root-cause data are archived under `docs/history/`; raw benchmark JSON belongs in the external artifact store rather than the active source tree.
+The report includes the absolute microsecond cost of the split frontier relative to the monolith frontier. Historical Python/Go × HTTP/gRPC matrices and dedicated-thread root-cause data are archived under `docs/archive/`; raw benchmark JSON belongs in the external artifact store rather than the active source tree.

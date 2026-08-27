@@ -16,7 +16,7 @@
 | `python-monolith-http-direct` | Python Agent Core + HTTP NBI + in-process backend + `DIRECT` | 最低单请求控制延迟、最少进程边界 | 没有显式 Worker RPC contract；vendor SDK 与 Core 同进程 |
 | `go-split-grpc` | Go Agent Core + gRPC/gNMI + UDS DeviceBackend + Python Worker + dedicated executor | 类型化 YANG contract、进程隔离、vendor SDK 隔离、支持远端编排客户端 | 多一次本地 RPC 和进程调度，单机延迟略高 |
 
-不再提供 Python split、Python gRPC NBI、Go HTTP NBI，也不接受旧 runtime matrix 配置。历史实现、测试数据和选择过程见 [`docs/history/`](./history/README.md)。
+不再提供 Python split、Python gRPC NBI、Go HTTP NBI，也不接受旧 runtime matrix 配置。历史实现、测试数据和选择过程见 [`docs/archive/`](./archive/README.md)。
 
 ## 2. 部署边界
 
@@ -55,8 +55,8 @@ flowchart LR
     end
 
     subgraph Southbound["Southbound backend（按设备二选一）"]
-        P4B[P4appBackend]
-        BFB[BfrtBackend]
+        P4B[P4AppBackend]
+        BFB[BFRTBackend]
     end
 
     subgraph Device["Device / simulator"]
@@ -260,12 +260,12 @@ Go split 示例：
 
 ## 8. 默认部署与迁移
 
-- P4App 默认：`ocs.agent/config/p4app.json`，即 Python monolith HTTP/DIRECT；
-- P4App Go split：显式使用 `ocs.agent/config/p4app-go-split-grpc.json`；
+- P4App 默认：`agent/configs/p4app/python-monolith-http-direct.json`，即 Python monolith HTTP/DIRECT；
+- P4App Go split：显式使用 `agent/configs/p4app/go-split-grpc.json`；
 - Tofino 默认：site-specific desired JSON 使用 `go-split-grpc`；
 - Tofino HTTP/DIRECT：允许作为最低延迟 profile，但 BF-SDE control process 占用 TCP/5000 时必须选择其他端口。
 
-Tofino 的 embedded `setup.py` 只负责加载基础 L3 表项和初始 OCS mapping，不再启动另一套 REST writer。这样所有运行期变更都经过两个正式 profile 之一，避免绕过统一的 lease、revision、rollback 和 ownership 语义。
+Tofino 的 embedded `initialize_dataplane.py` 只负责加载基础 L3 表项和初始 OCS mapping，不再启动另一套 REST writer。这样所有运行期变更都经过两个正式 profile 之一，避免绕过统一的 lease、revision、rollback 和 ownership 语义。
 
 旧配置迁移：
 
@@ -289,23 +289,23 @@ Tofino 的 embedded `setup.py` 只负责加载基础 L3 表项和初始 OCS mapp
 
 对比时必须拆分并报告：client preparation、client-to-Agent RTT、NBI runtime、Core validation/queue、Worker RPC、backend queue、delete/install/readback，以及真实数据面 blackout。不能只用端到端均值解释协议或语言效应。
 
-当前决定依据和历史 A/B 数据在 [历史性能报告](./history/ocs-http-grpc-performance.md) 中保存。完整 Tofino 数值与快切验收属于部署仓库；本文只保留解释 consistency trade-off 所需的代表性量级。
+当前决定依据和历史 A/B 数据在 [历史性能报告](./archive/2026-08-27-p4app-http-grpc-performance.md) 中保存。完整 Tofino 数值与快切验收属于部署仓库；本文只保留解释 consistency trade-off 所需的代表性量级。
 
 ## 10. 验证入口
 
 ```bash
 # Python shared semantics and both backends
-PYTHONPATH="$PWD/ocs.agent:$PWD/ocs.p4app/ocs.p4app-rc2" \
+PYTHONPATH="$PWD/agent/python:$PWD:$PWD/targets/p4app" \
   PYTHONDONTWRITEBYTECODE=1 \
-  python3 -m unittest discover -s ocs.agent/tests -v
+  python3 -m unittest discover -s agent/python/tests -v
 
 # Go Core and typed NBI
-cd ocs.agent/go-agent
+cd agent/go
 go test ./...
 go test -race ./...
 
 # P4App container
-cd ../../ocs.p4app/ocs.p4app-rc2
+cd ../../targets/p4app
 make test-container
 ```
 
