@@ -115,6 +115,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$artifact_root/model-runtime"
+export OCS_CONFIG_FILE="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
+export OCS_NET_CTRL_DIR="$repository_root/targets/tofino/runtime"
+marker_file="$artifact_root/bfrt-initialize.marker"
+rm -f -- "$marker_file"
+export OCS_BFRT_INIT_MARKER="$marker_file"
+
 setsid "$SDE/run_tofino_model.sh" \
     -p "$program_name" \
     -f "$ports_file" \
@@ -155,11 +161,6 @@ sleep 5
 kill -0 "$model_pid"
 kill -0 "$switchd_pid"
 
-export OCS_CONFIG_FILE="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
-export OCS_NET_CTRL_DIR="$repository_root/targets/tofino/runtime"
-marker_file="$artifact_root/bfrt-initialize.marker"
-rm -f -- "$marker_file"
-export OCS_BFRT_INIT_MARKER="$marker_file"
 command_file="$build_root/initialize-bfrt.cli"
 printf 'bfrt_python %s\nexit\n' \
     "$repository_root/targets/tofino/runtime/initialize_dataplane.py" \
