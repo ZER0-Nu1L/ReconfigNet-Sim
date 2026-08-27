@@ -165,10 +165,14 @@ printf 'bfrt_python %s\nexit\n' \
     "$repository_root/targets/tofino/runtime/initialize_dataplane.py" \
     >"$command_file"
 (
+    cat "$command_file"
+    # bfshell closes its socket as soon as stdin reaches EOF.  Keep stdin
+    # open while the embedded BFRT Python command runs; otherwise the shell
+    # can disconnect before the script has executed.
+    sleep "${BFRT_SHELL_GRACE_SECONDS:-10}"
+) | (
     cd "$build_root"
-    "$SDE/run_bfshell.sh" \
-        -f "$command_file" \
-        --status-port 7777
+    "$SDE/run_bfshell.sh" --status-port 7777
 ) 2>&1 | tee "$artifact_root/bfrt-initialize.log"
 
 test -s "$marker_file"
