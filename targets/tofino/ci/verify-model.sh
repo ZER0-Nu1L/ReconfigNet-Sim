@@ -115,11 +115,10 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$artifact_root/model-runtime"
-export OCS_CONFIG_FILE="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
-export OCS_NET_CTRL_DIR="$repository_root/targets/tofino/runtime"
 marker_file="$artifact_root/bfrt-initialize.marker"
 rm -f -- "$marker_file"
-export OCS_BFRT_INIT_MARKER="$marker_file"
+runtime_marker_file=/tmp/ocs-bfrt-initialize.marker
+rm -f -- "$runtime_marker_file"
 
 setsid "$SDE/run_tofino_model.sh" \
     -p "$program_name" \
@@ -161,9 +160,24 @@ sleep 5
 kill -0 "$model_pid"
 kill -0 "$switchd_pid"
 
+config_file="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
+bootstrap_file="$build_root/initialize-bfrt.py"
+# bf_switchd is launched through run_switchd.sh, which deliberately forwards
+# only its own SDE variables through sudo.  Set the CI-only paths inside the
+# embedded Python process instead of assuming the client's environment is
+# inherited by that process.
+printf '%s\n' \
+    'import os' \
+    'import runpy' \
+    "os.environ['OCS_CONFIG_FILE'] = '$config_file'" \
+    "os.environ['OCS_NET_CTRL_DIR'] = '$repository_root/targets/tofino/runtime'" \
+    "os.environ['OCS_BFRT_INIT_MARKER'] = '$runtime_marker_file'" \
+    "runpy.run_path('$repository_root/targets/tofino/runtime/initialize_dataplane.py', run_name='__main__')" \
+    >"$bootstrap_file"
+
 command_file="$build_root/initialize-bfrt.cli"
 printf 'bfrt_python %s\nexit\n' \
-    "$repository_root/targets/tofino/runtime/initialize_dataplane.py" \
+    "$bootstrap_file" \
     >"$command_file"
 (
     cat "$command_file"
@@ -176,6 +190,9 @@ printf 'bfrt_python %s\nexit\n' \
     "$SDE/run_bfshell.sh" --status-port 7777
 ) 2>&1 | tee "$artifact_root/bfrt-initialize.log"
 
+if [[ -s "$runtime_marker_file" ]]; then
+    cp -- "$runtime_marker_file" "$marker_file"
+fi
 test -s "$marker_file"
 grep -qx 'ocs-bfrt-initialized' "$marker_file"
 grep -Fq 'Loading OCS profile' "$artifact_root/bfrt-initialize.log"
