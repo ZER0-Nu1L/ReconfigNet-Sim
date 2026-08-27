@@ -1,151 +1,153 @@
 # ReconfigNet-Sim
 
-## Introduction
+ReconfigNet-Sim uses programmable switches to simulate a reconfigurable optical circuit switch. It supports a BMv2/P4App backend and a Tofino/BFRT backend with one shared OCS model and transaction contract.
 
-This repo is using programmable network to simulate reconfigable network (demand-aware).
+## Current OCS architecture
 
-There are two implementation, one (`ocs.p4app`) using p4app (using Mininet backend), the other (`ocs.tofino`) using Intel® P4 Studio (using tofino backend).
+Only two deployment profiles are supported:
 
+| Profile | Northbound interface | Device path | Purpose |
+| --- | --- | --- | --- |
+| `python-monolith-http-direct` | Python HTTP | in-process P4Runtime/BFRT backend | Minimum control latency |
+| `go-split-grpc` | Go gRPC/gNMI | UDS → Python Device Worker → dedicated backend executor | Typed YANG contract and vendor SDK isolation |
 
-```Bash
-git clone https://github.com/ZER0-Nu1L/ReconfigNet-Sim
-cd ReconfigNet-Sim
-git submodule update --init
+Both profiles retain the YAML model, named connections, strict `pi` validation, lease/revision checks, FULL/DELTA updates, structured errors and rollback semantics. Python split, Python gRPC NBI and Go HTTP NBI are historical implementations and have been removed from the active source tree.
+
+Start with:
+
+- [OCS Agent current architecture](docs/ocs-agent-architecture.md)
+- [Draft/YANG support matrix](docs/ocs-model-support.md)
+- [Control semantics](docs/ocs-control-semantics.md)
+- [Historical architecture evidence](docs/history/README.md)
+
+## Repository layout
+
+```text
+ocs.agent/                       shared model, Python Core/Worker, Go Core
+ocs.p4app/ocs.p4app-rc2/         BMv2/P4App data plane and launcher
+ocs.tofino/net-ctrl/             Tofino/BFRT launcher and backend integration
+docs/                            current architecture and historical reports
 ```
 
-We use P4 Switch to simulate optical circuit switch (OCS), and a Control Plane provides northbound interface to handle network reconfigurable requests.
+The P4App tree does not contain copies of shared Agent, protobuf, Go or YANG sources. Docker builds copy the canonical `ocs.agent/` tree.
 
-|Method|Path|Functionality|Request Body Example|Response Example|
-|-|-|-|-|-|
-|GET|`/ocs_mapping`|Retrieve current mapping configuration|None|`{"pi": [2,1,4,3], "mode": "ocs", "status": "ready"}`|
-|POST|`/ocs_mapping`|Update mapping configuration|`{"new_pi": [3,4,1,2], "delay_us": 250}`|`{"status": "success", "result": "updated", ...}`|
-|GET|`/ocs_mode`|Retrieve the current OCS/debug mode|None|`{"mode": "ocs", "active_entries": 4, ...}`|
-|POST|`/ocs_mode`|Switch between paired OCS and full-mesh debug mode|`{"mode": "debug"}`|`{"status": "success", "result": "updated", ...}`|
+## P4App
 
-- An OCS core implements strict bijective connectivity with an $N{\times}N$ MEMS mirror array that physically connects ingress-egress port pairs via optical beam steering. 
-- This intrinsic **bijective mapping** can be formalized as a bijective pairings $\mathbf{P} \in \{0,1\}^{N \times N}$ where $p_{ij}=1$ $\iff$ input $i$ connects to output $j$.
-- We use the list `pi`/`new_pi` to simplify the representation and transmission of this mapping relationship. 
-- `for ingress_port, egress_port in enumerate(pi, start=1)` will convert this list into a complete map.
+The rc2 P4App implementation runs in Docker.
 
-## p4app version usage
-
-- p4app approach have two sub-implementation, one using p4app main branch, and the other using rc-2.0.0 branch
-    rc-2.0.0 branch version (in `ocs.p4app/ocs.p4app-rc2`) is more complete (*Recommend*).
-- p4app run in docker. So it can even run on your laptop (macOS/Windows/Linux) with docker.
-
-
-(tty0) Using p4app to build a simulated reconfigurable network constructed via Mininet-P4Switch.
-```Bash
-cd ./ocs.p4app/ocs.p4app-rc2
-sudo make run
-
-# ...
-
-mininet> py net.pingAll(timeout = 1)
+```bash
+cd ocs.p4app/ocs.p4app-rc2
+make image
+make run
 ```
 
+The default config is `ocs.agent/config/p4app.json`, which selects `python-monolith-http-direct`, listens on HTTP port 5000 and uses `CACHED_SYNC`.
 
-(tty1) Use HTTP requests to query or change the simulated OCS. The p4app
-container does not include curl, so the examples use Python's standard HTTP
-client:
+To run the Go split profile:
 
-```Bash
-docker exec -it <container_id> python -c '
-import http.client, json
+```bash
+P4APP_CONTAINER_ARGS='-e OCS_CONFIG_FILE=/opt/ocs-agent/config/p4app-go-split-grpc.json' \
+  make run
+```
 
-def request(method, path, payload=None):
+The Go profile listens on gRPC port 9339 and uses a Unix-domain DeviceBackend socket inside the container.
+
+### HTTP example
+
+Every write requires a control lease and the current expected revision:
+
+```python
+import http.client
+import json
+
+
+def call(method, path, payload=None, headers=None):
+    connection = http.client.HTTPConnection('127.0.0.1', 5000)
     body = json.dumps(payload) if payload is not None else None
-    headers = {"Content-Type": "application/json"} if body else {}
-    conn = http.client.HTTPConnection("localhost", 5000)
-    conn.request(method, path, body=body, headers=headers)
-    response = conn.getresponse()
-    print(response.status, response.read().decode("utf-8"))
-    conn.close()
+    request_headers = {'Content-Type': 'application/json'} if body else {}
+    request_headers.update(headers or {})
+    connection.request(method, path, body=body, headers=request_headers)
+    response = connection.getresponse()
+    result = json.loads(response.read().decode('utf-8'))
+    connection.close()
+    return response.status, result
 
-request("GET", "/ocs_mapping")
-request("POST", "/ocs_mode", {"mode": "debug"})
-request("POST", "/ocs_mode", {"mode": "ocs", "delay_us": 250})
-request("POST", "/ocs_mapping", {
-    "new_pi": [4,3,2,1,8,7,6,5],
-    "delay_ms": 10
-})
-'
+
+_, lease = call('POST', '/ocs_control/acquire', {'client_id': 'example'})
+headers = {
+    'X-OCS-Control-Lease': lease['lease_token'],
+    'X-OCS-Expected-Revision': str(lease['revision']),
+}
+status, result = call('POST', '/ocs_mapping', {
+    'new_pi': [4, 3, 2, 1, 8, 7, 6, 5],
+    'strategy': 'DELTA',
+    'transport': 'NATIVE_BATCH',
+}, headers)
+print(status, result)
 ```
 
-Mapping and mode changes use break-before-make table programming. `delay_us`
-(0--1,000,000) and `delay_ms` (0--1000) are optional and mutually exclusive.
-The API serializes concurrent updates, treats unchanged requests as idempotent,
-and attempts to restore the previous table contents after a programming error.
+### gRPC example
 
-- Check `<container_id>` using `docker ps | grep p4app` on your host machine.
-- The p4app container relies on Python's standard library for these requests
-  because tools such as curl and wget are not installed.
+The image contains an operational client that manages lease and revision automatically:
 
-
-Use `config/p4app.json` to select L2/L3 forwarding, an even host count from 2
-through 8, the initial symmetric mapping, debugger/API enablement, and the REST
-listen address. Runtime OCS/debug mode is controlled through `/ocs_mode` and is
-separate from the L2/L3 forwarding setting.
-
-
-## Tofino version
-
-> Tofino version now assumes that you have configured the basic environment. 
-We will add more details for development environment in near future.
-
-```Bash
-cd ./ocs.tofino
+```bash
+ocs.p4app/p4app-rc2/p4app exec /usr/local/bin/ocs-control \
+  --target 127.0.0.1:9339 \
+  --operation apply \
+  --pi 4,3,2,1,8,7,6,5 \
+  --strategy delta \
+  --transport native-batch
 ```
 
-Split your terminal to several panes and execute `. ~/tools/set_sde.bash` for all of them.
+Use gNMI `Set` for named per-connection create/replace/delete and sparse connection sets. Use `OcsOperations.ApplyBatch` for a complete named set or strict `pi` batch.
 
-(tty0) Compile the P4 program
-```Bash
-~/tools/p4_build.sh ./p4src/ocs.p4
+## Tofino
+
+Tofino requires a matching BF-SDE environment and `bf_switchd` exposing external BF Runtime gRPC. The Agent uses an explicit site-specific JSON profile; real addresses, physical ports and logical-to-dev_port mappings must stay in the deployment repository.
+
+```bash
+cd ocs.tofino/net-ctrl
+./run_agent.sh /absolute/path/to/tofino-agent.json
 ```
 
+The normal Tofino deployment selects `go-split-grpc` with `CACHED_ACK`. `python-monolith-http-direct` remains available when minimum API latency is more important than the explicit Worker contract. Its HTTP listener must not use port 5000 while the BF-SDE control process owns that socket. The embedded `setup.py` only initializes data-plane tables; it no longer exposes an independent REST writer.
 
-(tty1) Run the Tofino Model
-```Bash
-sudo ~/tools/veth_setup.sh
-$SDE/run_tofino_model.sh -p ocs --log-dir ./logs
+Only one Agent may own a Tofino device. The launcher enforces a BFRT ownership lock.
 
-# ...
-# In the end 
-sudo ~/tools/veth_teardown.sh
+## Tests
+
+```bash
+# Shared Python semantics, P4Runtime adapter and BFRT adapter
+PYTHONPATH="$PWD/ocs.agent:$PWD/ocs.p4app/ocs.p4app-rc2" \
+  PYTHONDONTWRITEBYTECODE=1 \
+  python3 -m unittest discover -s ocs.agent/tests -v
+
+# Go Core and gRPC/gNMI implementation
+cd ocs.agent/go-agent
+go test ./...
+go test -race ./...
+
+# Pinned Python 3.5 P4App image and YANG validation
+cd ../../ocs.p4app/ocs.p4app-rc2
+make test-container
 ```
 
-(tty2) Launch the driver
-```Bash
-cd ./net-ctrl
-$SDE/run_switchd.sh -p ocs
+## Performance collection
+
+Performance reports must record deployment profile, client language, client-to-Agent RTT, backend, consistency mode, FULL/DELTA strategy and transport. The current collector accepts only the two supported profiles:
+
+```bash
+make benchmark-matrix-collect \
+  PROFILE=python-monolith-http-direct \
+  OUTPUT=python-http.json
+
+make benchmark-matrix-collect \
+  PROFILE=go-split-grpc \
+  OUTPUT=go-grpc.json
+
+python3 ../../ocs.agent/benchmarks/benchmark_matrix.py report \
+  --input python-http.json \
+  --input go-grpc.json
 ```
 
-(tty3) Switch entries install and lauch the Control plane
-```Bash
-cd ./net-ctrl
-export OCS_CONFIG_FILE=/absolute/path/to/deployment-profile.json
-$SDE/run_bfshell.sh -b <path-to-project>/ReconfigNet-Sim/ocs.tofino/net-ctrl/setup.py -i
-```
-> Use -i to stay in the interactive mode after the script has been executed.
-> `OCS_CONFIG_FILE` is mandatory. Copy `net-ctrl/config/project_conf.json`
-> as a schema example and keep real management addresses, endpoint MACs and
-> front-panel/dev-port assignments in a deployment repository.
-
-(tt4)
-```Bash
-sudo python ./net-ctrl/net-util/pingall.py
-
-# GET request (num_host=8):
-curl http://localhost:5000/ocs_mapping
-
-# POST request (num_host=8):
-curl -X POST -H "Content-Type: application/json" \
--d '{"new_pi":[3,4,1,2,8,7,5,6]}' \
-http://localhost:5000/ocs_mapping
-```
-
-The example profile at `net-ctrl/config/project_conf.json` uses documentation
-addresses and is not a hardware deployment profile. See
-[`docs/ocs-control-semantics.md`](docs/ocs-control-semantics.md) for the OCS,
-debug and break-before-make semantics shared by the BMv2 and Tofino backends.
+The report includes the absolute microsecond cost of the split frontier relative to the monolith frontier. Historical Python/Go × HTTP/gRPC matrices and dedicated-thread root-cause data are archived under `docs/history/`; raw benchmark JSON belongs in the external artifact store rather than the active source tree.
