@@ -1,0 +1,30 @@
+profile: tofino-6port-v1
+model-version: "2026-08-27"
+
+gnmi:
+  version: 0.10.0
+  encodings: [JSON_IETF]
+  models:
+    - {name: openconfig-platform, organization: OpenConfig, version: draft-profile}
+    - {name: oc-optical-switch, organization: OCP/OpenConfig, version: draft-profile}
+    - {name: oc-optical-switch-connections, organization: OCP/OpenConfig, version: draft-profile}
+    - {name: reconfig-net-ocs-tofino-profile, organization: ReconfigNet-Sim, version: "2026-08-27"}
+
+capabilities:
+  - {id: optical-switch-state, draft-area: optical-switch, status: SUPPORTED, source: agent-snapshot}
+  - {id: connection-recovery, draft-area: optical-switch/port-connection-recovery, status: UNSUPPORTED, behavior: NO_RECOVERY}
+  - {id: platform-port-identity, draft-area: components/component, status: SUPPORTED, source: logical-port-profile}
+  - {id: port-enabled, draft-area: components/component/ocp-ocs-port/enabled, status: DERIVED, behavior: fixed-true}
+  - {id: port-alias-description, draft-area: components/component/ocp-ocs-port/config, status: PLANNED}
+  - {id: switch-side, draft-area: components/component/ocp-ocs-port/state/switch-side, status: UNSUPPORTED}
+  - {id: port-status, draft-area: components/component/ocp-ocs-port/state/status, status: DERIVED, source: bfrt-cache-and-reconcile}
+  - {id: port-peer-connected, draft-area: components/component/ocp-ocs-port/state/connection, status: DERIVED, source: desired-and-bfrt-state}
+  - {id: error-counters, draft-area: components/component/ocp-ocs-port/state/counters, status: UNSUPPORTED}
+  - {id: point-to-point-connections, draft-area: optical-switch-connections/port-connection, status: SUPPORTED}
+  - {id: connection-rejection-reason, draft-area: operation-errors, status: SUPPORTED}
+  - {id: asynchronous-connection-state, draft-area: optical-switch-connections/port-connection/state/status, status: PLANNED}
+  - {id: connection-state, draft-area: optical-switch-connections/port-connection/state, status: DERIVED, source: desired-and-bfrt-state}
+  - {id: multicast-connections, draft-area: optical-switch-connections/multicast-port-connection, status: UNSUPPORTED}
+  - {id: soa-amplifier, draft-area: openconfig-ocs-soas, status: OUT_OF_SCOPE}
+  - {id: full-connection-set-replace, draft-area: optical-switch-connections, status: SUPPORTED}
+  - {id: permutation-batch, draft-area: vendor-extension/pi, status: SUPPORTED}

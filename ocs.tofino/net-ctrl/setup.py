@@ -1,6 +1,5 @@
 import os
 import sys
-import threading
 
 
 configured_file = os.environ.get('OCS_CONFIG_FILE')
@@ -16,7 +15,6 @@ from config.custom_connect import load_config
 from p4util.cleanup import clear_all
 from p4util.sw_fwd_p4runtime import setup_switch_basic_entries, show_switch_basic_entries
 from p4util.ocs_map_p4runtime import init_ocs_mapping
-from api.northbound import run_rest_api
 
 
 config_file = os.environ.get('OCS_CONFIG_FILE')
@@ -49,12 +47,3 @@ bfrt.complete_operations()
 
 print("Installed {} IPv4/MAC endpoint pairs".format(installed_l3_entries))
 print("Initial OCS mapping: {}".format(current_mapping))
-
-if config.get('enable_rest_api', True):
-    rest_api_config = config['rest_api']
-    api_thread = threading.Thread(
-        target=run_rest_api,
-        args=(current_mapping, runtime_state, p4_pipe, endpoints,
-              rest_api_config['host'], rest_api_config['port']))
-    api_thread.daemon = True
-    api_thread.start()

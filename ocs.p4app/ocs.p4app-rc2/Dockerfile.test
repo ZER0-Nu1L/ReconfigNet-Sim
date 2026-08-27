@@ -1,0 +1,8 @@
+ARG AGENT_IMAGE=reconfig-net/ocs-p4app-agent:rc2
+FROM ${AGENT_IMAGE}
+
+COPY ocs.agent/requirements-agent.txt ocs.agent/requirements-dev.txt /tmp/ocs-test-requirements/
+RUN PYTHONPATH=/usr/local/lib/python3.5/dist-packages \
+      python3 -S -m pip install --no-cache-dir \
+      -r /tmp/ocs-test-requirements/requirements-dev.txt && \
+    rm -rf /tmp/ocs-test-requirements

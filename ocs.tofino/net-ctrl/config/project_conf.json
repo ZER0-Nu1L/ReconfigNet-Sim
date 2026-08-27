@@ -3,11 +3,6 @@
   "p4_program": "ocs",
   "num_hosts": 6,
   "initial_mapping": [6, 3, 2, 5, 4, 1],
-  "enable_rest_api": true,
-  "rest_api": {
-    "host": "127.0.0.1",
-    "port": 5000
-  },
   "endpoints": [
     {"slot": 1, "name": "endpoint01", "front_panel_port": "1/0", "dev_port": 1, "ipv4": "192.0.2.1", "mac": "02:00:00:00:00:01"},
     {"slot": 2, "name": "endpoint02", "front_panel_port": "2/0", "dev_port": 2, "ipv4": "192.0.2.2", "mac": "02:00:00:00:00:02"},

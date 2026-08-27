@@ -1,0 +1,201 @@
+syntax = "proto3";
+
+package reconfig_net.ocs.v1;
+option go_package = "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1;ocsv1";
+
+enum Mode {
+  MODE_UNSPECIFIED = 0;
+  MODE_OCS = 1;
+  MODE_DEBUG = 2;
+}
+
+enum RuntimeStatus {
+  RUNTIME_STATUS_UNSPECIFIED = 0;
+  RUNTIME_STATUS_READY = 1;
+  RUNTIME_STATUS_UPDATING = 2;
+  RUNTIME_STATUS_ERROR = 3;
+}
+
+enum ExecutionStrategy {
+  EXECUTION_STRATEGY_UNSPECIFIED = 0;
+  EXECUTION_STRATEGY_FULL = 1;
+  EXECUTION_STRATEGY_DELTA = 2;
+}
+
+enum Transport {
+  TRANSPORT_UNSPECIFIED = 0;
+  TRANSPORT_SEQUENTIAL = 1;
+  TRANSPORT_NATIVE_BATCH = 2;
+}
+
+enum RecoveryMode {
+  RECOVERY_MODE_UNSPECIFIED = 0;
+  RECOVERY_MODE_REAPPLY_DESIRED = 1;
+}
+
+message Empty {}
+
+message Connection {
+  string connection_name = 1;
+  bool bidirectional = 2;
+  string near_port_name = 3;
+  string far_port_name = 4;
+  string status = 5;
+}
+
+message ConnectionSet {
+  repeated Connection connections = 1;
+}
+
+message Permutation {
+  repeated uint32 pi = 1;
+}
+
+message BackendCapabilities {
+  string backend = 1;
+  bool readback = 2;
+  bool native_batch = 3;
+  bool dataplane_atomic = 4;
+  repeated string transports = 5;
+  repeated string write_verifications = 6;
+  repeated string readback_sources = 7;
+}
+
+message OperationTiming {
+  string strategy = 1;
+  string transport = 2;
+  uint64 queue_wait_us = 3;
+  uint64 validation_us = 4;
+  uint64 planning_us = 5;
+  uint64 delete_commit_us = 6;
+  uint64 requested_gap_us = 7;
+  uint64 actual_gap_us = 8;
+  uint64 install_commit_us = 9;
+  uint64 readback_us = 10;
+  uint64 rollback_us = 11;
+  uint64 programming_total_us = 12;
+  uint64 server_total_us = 13;
+  uint32 delete_entries = 14;
+  uint32 insert_entries = 15;
+  uint32 unchanged_entries = 16;
+  uint32 active_entries = 17;
+  uint32 device_write_requests = 18;
+  uint64 device_worker_rpc_us = 19;
+  uint64 device_worker_total_us = 20;
+  uint64 precondition_readback_us = 21;
+  uint64 lease_revision_check_us = 22;
+  uint64 cache_precondition_us = 23;
+  uint64 southbound_queue_wait_us = 24;
+  string write_verification = 25;
+  string readback_source = 26;
+}
+
+message DeviceState {
+  string consistency_mode = 1;
+  string cache_status = 2;
+  uint64 generation = 3;
+  uint64 last_verified_unix_ns = 4;
+  uint64 last_reconcile_unix_ns = 5;
+  uint64 drift_count = 6;
+  string write_verification = 7;
+  string readback_source = 8;
+  uint64 last_write_ack_unix_ns = 9;
+}
+
+message RuntimeState {
+  Mode mode = 1;
+  RuntimeStatus status = 2;
+  uint64 revision = 3;
+  uint64 request_id = 4;
+  uint32 active_entries = 5;
+  ConnectionSet connection_set = 6;
+  BackendCapabilities backend_capabilities = 7;
+  string profile = 8;
+  string last_error = 9;
+  DeviceState device_state = 10;
+}
+
+message GetRuntimeResponse {
+  RuntimeState state = 1;
+  OperationTiming last_timing = 2;
+}
+
+message GetPermutationResponse {
+  RuntimeState state = 1;
+  Permutation permutation = 2;
+}
+
+message ApplyBatchRequest {
+  oneof intent {
+    ConnectionSet connection_set = 1;
+    Permutation permutation = 2;
+  }
+  ExecutionStrategy strategy = 3;
+  Transport transport = 4;
+  uint64 delay_us = 5;
+  bool has_expected_revision = 6;
+  uint64 expected_revision = 7;
+}
+
+message SetModeRequest {
+  Mode mode = 1;
+  uint64 delay_us = 2;
+  Transport transport = 3;
+  bool has_expected_revision = 4;
+  uint64 expected_revision = 5;
+}
+
+message OperationReply {
+  RuntimeState state = 1;
+  string result = 2;
+  uint64 request_id = 3;
+  uint64 request_received_unix_ns = 4;
+  OperationTiming timing = 5;
+}
+
+message AcquireControlRequest {
+  string client_id = 1;
+  uint32 requested_lease_seconds = 2;
+}
+
+message RenewControlRequest {
+  string lease_token = 1;
+  uint32 requested_lease_seconds = 2;
+}
+
+message ReleaseControlRequest {
+  string lease_token = 1;
+}
+
+message ControlLease {
+  string lease_token = 1;
+  uint64 lease_epoch = 2;
+  uint64 expires_unix_ns = 3;
+  uint64 revision = 4;
+}
+
+message ControlState {
+  bool active = 1;
+  string client_id = 2;
+  uint64 lease_epoch = 3;
+  uint64 expires_unix_ns = 4;
+  uint64 revision = 5;
+}
+
+message RecoverDeviceStateRequest {
+  RecoveryMode mode = 1;
+  bool has_expected_revision = 2;
+  uint64 expected_revision = 3;
+}
+
+service OcsOperations {
+  rpc AcquireControl(AcquireControlRequest) returns (ControlLease);
+  rpc RenewControl(RenewControlRequest) returns (ControlLease);
+  rpc ReleaseControl(ReleaseControlRequest) returns (ControlState);
+  rpc GetControlState(Empty) returns (ControlState);
+  rpc GetRuntime(Empty) returns (GetRuntimeResponse);
+  rpc GetPermutation(Empty) returns (GetPermutationResponse);
+  rpc ApplyBatch(ApplyBatchRequest) returns (OperationReply);
+  rpc SetMode(SetModeRequest) returns (OperationReply);
+  rpc RecoverDeviceState(RecoverDeviceStateRequest) returns (OperationReply);
+}

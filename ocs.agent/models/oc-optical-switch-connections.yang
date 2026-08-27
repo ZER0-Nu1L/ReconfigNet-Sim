@@ -1,0 +1,123 @@
+module oc-optical-switch-connections {
+  yang-version 1.1;
+  namespace "http://reconfig-net.local/yang/oc-optical-switch-connections-draft-profile";
+  prefix oc-ocs-connections;
+
+  import openconfig-platform {
+    prefix oc-platform;
+  }
+
+  organization
+    "ReconfigNet-Sim experimental profile";
+  description
+    "Experimental connection data tree derived from the OCS API working
+     draft. The P4app capability profile supports bidirectional point-to-point
+     connections and rejects multicast connection writes.";
+
+  revision 2026-08-25 {
+    description
+      "Initial P4app profile derived from the OCS API working draft.";
+  }
+
+  typedef connection-status {
+    type enumeration {
+      enum PENDING_CONNECT;
+      enum CONNECTED;
+      enum PENDING_DELETE;
+      enum FAILED;
+      enum UNKNOWN;
+    }
+  }
+
+  typedef port-reference {
+    type leafref {
+      path "/oc-platform:components/oc-platform:component/oc-platform:name";
+    }
+  }
+
+  container optical-switch-connections {
+    list port-connection {
+      key "connection-name";
+
+      leaf connection-name {
+        type string;
+      }
+
+      container config {
+        leaf connection-name {
+          type string;
+        }
+        leaf bidirectional {
+          type boolean;
+          default "true";
+        }
+        leaf near-port-name {
+          type port-reference;
+          mandatory true;
+        }
+        leaf far-port-name {
+          type port-reference;
+          mandatory true;
+        }
+      }
+
+      container state {
+        config false;
+        leaf connection-name {
+          type string;
+        }
+        leaf status {
+          type connection-status;
+        }
+        leaf bidirectional {
+          type boolean;
+        }
+        leaf near-port-name {
+          type port-reference;
+        }
+        leaf far-port-name {
+          type port-reference;
+        }
+      }
+    }
+
+    list multicast-port-connection {
+      key "connection-name";
+
+      leaf connection-name {
+        type string;
+      }
+
+      container config {
+        leaf connection-name {
+          type string;
+        }
+        leaf bidirectional {
+          type boolean;
+        }
+        leaf-list near-port-name {
+          type port-reference;
+        }
+        leaf-list far-port-name {
+          type port-reference;
+        }
+      }
+
+      container state {
+        config false;
+        leaf connection-name {
+          type string;
+        }
+        leaf bidirectional {
+          type boolean;
+        }
+        leaf-list near-port-name {
+          type port-reference;
+        }
+        leaf-list far-port-name {
+          type port-reference;
+        }
+      }
+    }
+  }
+}

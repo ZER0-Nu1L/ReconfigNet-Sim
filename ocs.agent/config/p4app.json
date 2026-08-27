@@ -1,0 +1,23 @@
+{
+  "mode": "l3",
+  "deployment_profile": "python-monolith-http-direct",
+  "model_file": "ocs-model.yaml",
+  "capability_profile_file": "p4app-capabilities.yaml",
+  "enable_debugger": false,
+  "http_api": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "access_log": false
+  },
+  "device": {
+    "consistency_mode": "CACHED_SYNC"
+  },
+  "startup_policy": "REAPPLY_DESIRED",
+  "control": {
+    "lease_seconds": 30,
+    "reconcile_interval_seconds": 30
+  },
+  "backend": {
+    "type": "p4app"
+  }
+}

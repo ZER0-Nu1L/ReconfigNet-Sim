@@ -22,6 +22,22 @@ def validate_config(config):
     if not isinstance(config, dict):
         raise ValueError("Configuration root must be an object")
 
+    deprecated = sorted(set(config).intersection(
+        ('enable_rest_api', 'rest_api')))
+    if deprecated:
+        raise ValueError(
+            "Embedded REST fields are no longer supported: {}. "
+            "Run python-monolith-http-direct through agent_main.py instead."
+            .format(', '.join(deprecated)))
+    allowed = set((
+        'fabric', 'p4_program', 'num_hosts', 'initial_mapping',
+        'endpoints'))
+    unknown = sorted(set(config) - allowed)
+    if unknown:
+        raise ValueError(
+            "Configuration contains unknown fields: {}".format(
+                ', '.join(unknown)))
+
     endpoints = config.get('endpoints')
     if not isinstance(endpoints, list) or not endpoints:
         raise ValueError("endpoints must be a non-empty list")
@@ -91,16 +107,6 @@ def validate_config(config):
     initial_mapping = config.get('initial_mapping')
     validate_mapping(initial_mapping, len(normalized))
 
-    rest_api = config.get('rest_api', {})
-    if not isinstance(rest_api, dict):
-        raise ValueError("rest_api must be an object")
-    rest_host = rest_api.get('host', '127.0.0.1')
-    rest_port = rest_api.get('port', 5000)
-    if not isinstance(rest_host, str) or not rest_host:
-        raise ValueError("rest_api.host must be a non-empty string")
-    if isinstance(rest_port, bool) or not isinstance(rest_port, int) or not 1 <= rest_port <= 65535:
-        raise ValueError("rest_api.port must be between 1 and 65535")
-
     result = dict(config)
     p4_program = config.get('p4_program', 'ocs')
     if not isinstance(p4_program, str) or not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', p4_program):
@@ -109,8 +115,6 @@ def validate_config(config):
     result['num_hosts'] = len(normalized)
     result['endpoints'] = normalized
     result['initial_mapping'] = list(initial_mapping)
-    result['enable_rest_api'] = bool(config.get('enable_rest_api', True))
-    result['rest_api'] = {'host': rest_host, 'port': rest_port}
     return result
 
 

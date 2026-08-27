@@ -1,0 +1,121 @@
+module openconfig-platform {
+  yang-version 1.1;
+  namespace "http://reconfig-net.local/yang/openconfig-platform-draft-profile";
+  prefix oc-platform;
+
+  organization
+    "ReconfigNet-Sim experimental profile";
+  description
+    "A minimal local profile of the OpenConfig platform component tree used
+     by the OCS API working draft. This is not the complete standardized
+     openconfig-platform module.";
+
+  revision 2026-08-25 {
+    description
+      "Initial P4app profile derived from the OCS API working draft.";
+  }
+
+  typedef ocs-port-status {
+    type enumeration {
+      enum OFF;
+      enum BLOCKED;
+      enum FAILED;
+      enum TUNING;
+      enum TUNED;
+      enum UNKNOWN;
+    }
+  }
+
+  container components {
+    list component {
+      key "name";
+
+      leaf name {
+        type string;
+      }
+
+      container config {
+        leaf name {
+          type string;
+        }
+      }
+
+      container state {
+        config false;
+        leaf name {
+          type string;
+        }
+        leaf type {
+          type string;
+          description
+            "The P4app profile reports OCP_OCS_PORT.";
+        }
+      }
+
+      container ocp-ocs-port {
+        container config {
+          leaf enabled {
+            type boolean;
+          }
+          leaf alias {
+            type string;
+          }
+          leaf description {
+            type string;
+          }
+        }
+
+        container state {
+          config false;
+          leaf enabled {
+            type boolean;
+          }
+          leaf alias {
+            type string;
+          }
+          leaf description {
+            type string;
+          }
+          leaf switch-side {
+            type enumeration {
+              enum A_SIDE;
+              enum B_SIDE;
+            }
+          }
+          leaf index {
+            type uint32;
+          }
+          leaf status {
+            type ocs-port-status;
+          }
+          container connection {
+            leaf peer {
+              type leafref {
+                path "/oc-platform:components/oc-platform:component/oc-platform:name";
+              }
+            }
+            leaf connected {
+              type boolean;
+            }
+            container counters {
+              leaf correctable-error-count {
+                type uint64;
+              }
+              leaf total-error-count {
+                type uint64;
+              }
+            }
+          }
+          container counters {
+            leaf correctable-error-count {
+              type uint64;
+            }
+            leaf total-error-count {
+              type uint64;
+            }
+          }
+        }
+      }
+    }
+  }
+}
