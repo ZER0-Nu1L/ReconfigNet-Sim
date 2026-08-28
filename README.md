@@ -19,10 +19,6 @@ Programmable-switch research infrastructure for reconfigurable optical networks.
   <a href="https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/tofino-model.yml"><img alt="Tofino model" src="https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/tofino-model.yml/badge.svg?branch=main"></a>
 </p>
 
-[![License](https://img.shields.io/github/license/ZER0-Nu1L/ReconfigNet-Sim.svg)](LICENSE)
-[![P4App](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/p4app.yml/badge.svg?branch=main)](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/p4app.yml)
-[![Tofino model](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/tofino-model.yml/badge.svg?branch=main)](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/tofino-model.yml)
-
 ReconfigNet-Sim is a programmable-switch platform for low-cost investigation of the system-integration, control and deployment problems surrounding reconfigurable optical networks.
 
 ## Motivation
