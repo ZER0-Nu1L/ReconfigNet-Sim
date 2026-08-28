@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-labelledby="title desc">
+  <title id="title">ReconfigNet-Sim crossbar mark</title>
+  <desc id="desc">A programmable switch matrix with four logical ports per side and two highlighted reconfigurable paths.</desc>
+  <g fill="none" stroke="#172746" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M40 70H280M40 130H280M40 190H280M40 250H280"/>
+    <path d="M105 70V250M160 70V250M215 70V250"/>
+  </g>
+  <g fill="none" stroke="#28A7B8" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M40 70H105L160 130H280"/>
+    <path d="M40 190H105L160 250H280"/>
+  </g>
+  <g fill="#172746">
+    <rect x="94" y="119" width="22" height="22" rx="4"/>
+    <rect x="94" y="239" width="22" height="22" rx="4"/>
+    <rect x="149" y="59" width="22" height="22" rx="4"/>
+    <rect x="149" y="179" width="22" height="22" rx="4"/>
+    <rect x="204" y="59" width="22" height="22" rx="4"/>
+    <rect x="204" y="179" width="22" height="22" rx="4"/>
+  </g>
+  <g fill="#28A7B8">
+    <circle cx="40" cy="70" r="17"/>
+    <circle cx="40" cy="130" r="17"/>
+    <circle cx="40" cy="190" r="17"/>
+    <circle cx="40" cy="250" r="17"/>
+    <circle cx="280" cy="70" r="17"/>
+    <circle cx="280" cy="130" r="17"/>
+    <circle cx="280" cy="190" r="17"/>
+    <circle cx="280" cy="250" r="17"/>
+    <rect x="94" y="59" width="22" height="22" rx="4"/>
+    <rect x="149" y="119" width="22" height="22" rx="4"/>
+    <rect x="204" y="119" width="22" height="22" rx="4"/>
+    <rect x="94" y="179" width="22" height="22" rx="4"/>
+    <rect x="149" y="239" width="22" height="22" rx="4"/>
+    <rect x="204" y="239" width="22" height="22" rx="4"/>
+  </g>
+</svg>
