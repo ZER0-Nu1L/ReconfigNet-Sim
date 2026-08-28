@@ -28,6 +28,7 @@ ports_file="$repository_root/targets/tofino/ci/model-ports.json"
 program_name=ocs
 
 mkdir -p "$artifact_root" "$build_root"
+artifact_root=$(cd "$artifact_root" && pwd)
 rm -rf -- "$build_dir"
 mkdir -p "$build_dir"
 
@@ -93,6 +94,34 @@ fi
 model_pid=
 switchd_pid=
 
+check_runtime_processes() {
+    local phase=$1
+    if ! kill -0 "$model_pid" 2>/dev/null; then
+        echo "Tofino model exited $phase" >&2
+        return 1
+    fi
+    if ! kill -0 "$switchd_pid" 2>/dev/null; then
+        echo "bf_switchd exited $phase" >&2
+        return 1
+    fi
+}
+
+wait_for_tcp_port() {
+    local port=$1
+    local description=$2
+    local timeout=$3
+    local deadline=$((SECONDS + timeout))
+
+    until (: >/dev/tcp/127.0.0.1/"$port") 2>/dev/null; do
+        check_runtime_processes "while waiting for $description" || return 1
+        if ((SECONDS >= deadline)); then
+            echo "Timed out waiting for $description on port $port" >&2
+            return 1
+        fi
+        sleep 2
+    done
+}
+
 cleanup() {
     local pid
     set +e
@@ -114,6 +143,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$artifact_root/model-runtime"
+marker_file="$artifact_root/bfrt-initialize.marker"
+rm -f -- "$marker_file"
+runtime_marker_file=/tmp/ocs-bfrt-initialize.marker
+rm -f -- "$runtime_marker_file"
+
 setsid "$SDE/run_tofino_model.sh" \
     -p "$program_name" \
     -f "$ports_file" \
@@ -125,40 +159,94 @@ model_pid=$!
 sleep 2
 kill -0 "$model_pid"
 
-setsid "$SDE/run_switchd.sh" \
-    -p "$program_name" \
-    --arch tofino \
-    --server-listen-local-only \
-    -C \
-    >"$artifact_root/switchd.log" 2>&1 &
+(
+    cd "$build_root"
+    exec setsid "$SDE/run_switchd.sh" \
+        -p "$program_name" \
+        --arch tofino \
+        --server-listen-local-only \
+        -C
+) >"$artifact_root/switchd.log" 2>&1 &
 switchd_pid=$!
 
-deadline=$((SECONDS + ${SWITCHD_READY_TIMEOUT:-180}))
-until (echo >/dev/tcp/127.0.0.1/7777) 2>/dev/null; do
-    kill -0 "$model_pid" 2>/dev/null || {
-        echo "Tofino model exited before switchd became ready" >&2
-        exit 1
-    }
-    kill -0 "$switchd_pid" 2>/dev/null || {
-        echo "bf_switchd exited before its status server became ready" >&2
-        exit 1
-    }
-    if ((SECONDS >= deadline)); then
-        echo "Timed out waiting for bf_switchd status port" >&2
-        exit 1
-    fi
-    sleep 2
-done
+wait_for_tcp_port \
+    7777 \
+    "bf_switchd status server" \
+    "${SWITCHD_READY_TIMEOUT:-180}"
+wait_for_tcp_port \
+    50052 \
+    "BF Runtime gRPC server" \
+    "${BFRT_READY_TIMEOUT:-180}"
 
 sleep 5
-kill -0 "$model_pid"
-kill -0 "$switchd_pid"
+check_runtime_processes "after the runtime ports became ready"
 
-export OCS_CONFIG_FILE="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
-export OCS_NET_CTRL_DIR="$repository_root/targets/tofino/runtime"
-"$SDE/run_bfshell.sh" \
-    -b "$repository_root/targets/tofino/runtime/initialize_dataplane.py" \
-    --status-port 7777 \
-    2>&1 | tee "$artifact_root/bfrt-initialize.log"
+config_file="$repository_root/targets/tofino/runtime/config/device-profile.example.json"
+bootstrap_file="$build_root/initialize-bfrt.py"
+# bf_switchd is launched through run_switchd.sh, which deliberately forwards
+# only its own SDE variables through sudo.  Set the CI-only paths inside the
+# embedded Python process instead of assuming the client's environment is
+# inherited by that process.
+printf '%s\n' \
+    'import os' \
+    "os.environ['OCS_CONFIG_FILE'] = '$config_file'" \
+    "os.environ['OCS_NET_CTRL_DIR'] = '$repository_root/targets/tofino/runtime'" \
+    "os.environ['OCS_BFRT_INIT_MARKER'] = '$runtime_marker_file'" \
+    "_ocs_script = '$repository_root/targets/tofino/runtime/initialize_dataplane.py'" \
+    "with open(_ocs_script, 'rb') as _ocs_source:" \
+    "    exec(compile(_ocs_source.read(), _ocs_script, 'exec'), globals(), globals())" \
+    >"$bootstrap_file"
+
+command_file="$build_root/initialize-bfrt.cli"
+printf 'bfrt_python %s\n' \
+    "$bootstrap_file" \
+    >"$command_file"
+
+drive_bfshell() {
+    local deadline=$((SECONDS + ${BFRT_INIT_TIMEOUT:-180}))
+
+    if ! cat "$command_file"; then
+        echo "Failed to send the BFRT initialization command" >&2
+        return 1
+    fi
+    # Keep stdin open while the BFRT Python command runs.  Sending exit
+    # earlier can terminate bfshell before the initialization has completed.
+    until [[ -s "$runtime_marker_file" ]]; do
+        check_runtime_processes \
+            "before BFRT initialization completed" || return 1
+        if ((SECONDS >= deadline)); then
+            echo "Timed out waiting for the BFRT initialization marker" >&2
+            return 1
+        fi
+        sleep 1
+    done
+    printf 'exit\n'
+}
+
+set +e
+drive_bfshell | (
+    cd "$build_root"
+    "$SDE/run_bfshell.sh" --status-port 7777
+) 2>&1 | tee "$artifact_root/bfrt-initialize.log"
+bfrt_pipeline_status=("${PIPESTATUS[@]}")
+set -e
+
+if ((bfrt_pipeline_status[0] != 0 ||
+     bfrt_pipeline_status[1] != 0 ||
+     bfrt_pipeline_status[2] != 0)); then
+    printf 'BFRT initialization pipeline failed (driver=%d bfshell=%d tee=%d)\n' \
+        "${bfrt_pipeline_status[0]}" \
+        "${bfrt_pipeline_status[1]}" \
+        "${bfrt_pipeline_status[2]}" >&2
+    exit 1
+fi
+
+if [[ -s "$runtime_marker_file" ]]; then
+    cp -- "$runtime_marker_file" "$marker_file"
+fi
+test -s "$marker_file"
+grep -qx 'ocs-bfrt-initialized' "$marker_file"
+grep -Fq 'Loading OCS profile' "$artifact_root/bfrt-initialize.log"
+grep -Fq 'Initial OCS mapping' "$artifact_root/bfrt-initialize.log"
 
 echo "Tofino model verification passed for $program_name."

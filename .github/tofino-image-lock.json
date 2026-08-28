@@ -1,9 +1,9 @@
 {
-  "image": "ghcr.io/zer0-nu1l/open-p4studio-container@sha256:31d10548542d329a78f4f1108a29f3fe75c7bfc6e73e91d559344e4ad5819658",
+  "image": "ghcr.io/zer0-nu1l/open-p4studio-container@sha256:d83e551399efe479b0dac9b0e3799ad742a105156ce687a588230a83ac5e570f",
   "open_p4studio_commit": "0e81a468930b6f29ddf7744250b472d709944dcc",
   "p4c_commit": "8ffb734bd26231ea0715d4615edbd4d34143ab3f",
   "platform": "linux/amd64",
   "profile": "tofino1-model-bfrt",
-  "release": "sde-9.13.4-tofino1-r1",
+  "release": "sde-9.13.4-tofino1-r2",
   "sde_version": "9.13.4"
 }
