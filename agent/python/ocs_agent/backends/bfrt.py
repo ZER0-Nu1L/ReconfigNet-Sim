@@ -1,3 +1,5 @@
+import glob
+import inspect
 import os
 import sys
 import threading
@@ -24,13 +26,28 @@ def unix_time_ns():
         return int(time.time() * 1000000000)
 
 
+def _sde_python_paths(sde_install):
+    python_lib = os.path.join(sde_install, 'lib')
+    running_python = 'python{}.{}'.format(
+        sys.version_info[0], sys.version_info[1])
+    candidates = [
+        os.path.join(python_lib, running_python, 'site-packages'),
+    ]
+    candidates.extend(sorted(glob.glob(
+        os.path.join(python_lib, 'python*', 'site-packages'))))
+
+    paths = []
+    for site_packages in candidates:
+        for path in (os.path.join(site_packages, 'tofino'), site_packages):
+            if os.path.isdir(path) and path not in paths:
+                paths.append(path)
+    return paths
+
+
 def _load_bfrt_client(sde_install=None):
     sde_install = sde_install or os.environ.get('SDE_INSTALL')
     if sde_install:
-        site_packages = os.path.join(
-            sde_install, 'lib', 'python2.7', 'site-packages')
-        tofino_packages = os.path.join(site_packages, 'tofino')
-        for path in (site_packages, tofino_packages):
+        for path in reversed(_sde_python_paths(sde_install)):
             if path not in sys.path:
                 sys.path.insert(0, path)
     try:
@@ -40,6 +57,17 @@ def _load_bfrt_client(sde_install=None):
             'BF Runtime Python client is unavailable; set SDE_INSTALL or '
             'PYTHONPATH to the BF-SDE client packages: {}'.format(error))
     return gc
+
+
+def _supports_keyword(callable_object, keyword):
+    try:
+        parameters = inspect.signature(callable_object).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.name == keyword or
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters)
 
 
 def _normalize_port_map(value):
@@ -106,14 +134,18 @@ class BFRTBackend(object):
             enable_learn=False,
             enable_idletimeout=False,
             enable_port_status_change=False)
+        interface_options = {
+            'client_id': config.get('client_id', 17),
+            'device_id': config.get('device_id', 0),
+            'notifications': notifications,
+            'timeout': config.get('timeout_seconds', 2),
+            'num_tries': config.get('subscribe_attempts', 5),
+        }
+        if _supports_keyword(self.gc.ClientInterface, 'is_master'):
+            interface_options['is_master'] = False
         self.interface = self.gc.ClientInterface(
             config.get('grpc_target', '127.0.0.1:50052'),
-            client_id=config.get('client_id', 17),
-            device_id=config.get('device_id', 0),
-            is_master=False,
-            notifications=notifications,
-            timeout=config.get('timeout_seconds', 2),
-            num_tries=config.get('subscribe_attempts', 5))
+            **interface_options)
         self.p4_name = config.get('p4_name', 'ocs')
         self.interface.bind_pipeline_config(self.p4_name)
         self.info = self.interface.bfrt_info_get(self.p4_name)
@@ -156,8 +188,15 @@ class BFRTBackend(object):
 
     def close(self):
         if self.interface is not None:
-            self.interface._tear_down_stream()
+            interface = self.interface
             self.interface = None
+            tear_down = getattr(interface, 'tear_down_stream', None)
+            if tear_down is None:
+                tear_down = getattr(interface, '_tear_down_stream', None)
+            if tear_down is None:
+                raise RuntimeError(
+                    'BF Runtime client does not expose stream teardown')
+            tear_down()
 
     def _device_pair(self, logical_pair):
         try:

@@ -25,12 +25,13 @@ CI environment.
 | Target | Environment and customization | Cost | Pull requests | `main` push / manual run | Outside the validation boundary |
 | --- | --- | --- | --- | --- | --- |
 | P4App / BMv2 | Repository-controlled P4App container, BMv2 topology, startup flow, Agent profile and test orchestration. These layers can be changed together for project-specific experiments. | Lower; suitable for frequent iteration. | Python/YANG tests, Go tests, P4App container tests and whitespace checks. | The same complete suite. | Physical switch, firmware, drivers, PHY behavior and optical behavior. |
-| Tofino 1 model | Project P4 pipeline, runtime tests and BFRT bootstrap run against the digest-pinned [`open-p4studio-container`](https://github.com/ZER0-Nu1L/open-p4studio-container). The underlying toolchain and model are fixed by that image. | Higher; compilation, model startup and BFRT initialization are comparatively heavyweight. | Pipeline compilation and target-neutral runtime tests only. | Compilation plus privileged Tofino model startup, pipeline loading and BFRT initialization. | Physical Tofino board, BSP, SerDes, firmware, drivers, site port mappings and optical behavior. |
+| Tofino 1 model | Project P4 pipeline, runtime tests, BFRT bootstrap and PTF run against the digest-pinned [`open-p4studio-container`](https://github.com/ZER0-Nu1L/open-p4studio-container). The underlying toolchain and model are fixed by that image. | Higher; compilation, model startup and packet/BFRT validation are comparatively heavyweight. | Pipeline compilation, target-neutral runtime tests and image-lock tests only. | Compilation plus privileged Tofino model startup, pipeline loading, BFRT initialization, forwarding/drop checks, live mapping reconfiguration and startup-state restoration. | Physical Tofino board, BSP, SerDes, firmware, drivers, site port mappings and optical behavior. |
 
 Use P4App for low-cost, highly customized integration work. Use the Tofino
 model as a heavier compatibility gate for the P4 compiler, generated pipeline,
-software model and BFRT initialization path. A successful model run must not be
-described as physical Tofino or optical-hardware validation.
+software model, BFRT initialization/reconfiguration path and project PTF
+behavior. A successful model run must not be described as physical Tofino or
+optical-hardware validation.
 
 ## Local checks
 
@@ -39,6 +40,8 @@ git diff --check
 make -C targets/p4app test
 make -C targets/p4app test-container
 (cd agent/go && go test ./...)
+python3 -m unittest discover -s targets/tofino/ci/tests -v
+python3 targets/tofino/ci/image_lock.py verify
 ```
 
 The Tofino workflow consumes the immutable image reference in
@@ -54,8 +57,9 @@ for local compile-only and full-model reproduction commands.
 
 - Keep workflow paths, Make targets, dependency paths, cache paths and target
   documentation synchronized with repository layout changes.
-- Update `.github/tofino-image-lock.json` only from a reviewed immutable
-  release digest; never replace it with a floating image tag.
+- Update `.github/tofino-image-lock.json` only with
+  `targets/tofino/ci/image_lock.py update` from a reviewed immutable Release;
+  never replace it with a floating image tag or hand-edited lock.
 - When changing shared Agent contracts or semantics, consider both P4App and
   Tofino runtime tests even if only one target implementation was edited.
 - Document whether a result came from P4App, Tofino compilation, the Tofino

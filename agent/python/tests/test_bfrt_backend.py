@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 
 
@@ -160,6 +161,67 @@ class BFRTBackendTests(unittest.TestCase):
         self.assertEqual(table.read_calls, [False, True])
         self.assertEqual(
             backend.device_state()['readback_source'], 'BFRT_HARDWARE')
+
+    def test_detects_client_interface_keyword_compatibility(self):
+        class CurrentClientInterface(object):
+            def __init__(self, grpc_addr, client_id, device_id,
+                         notifications=None, timeout=1, num_tries=5,
+                         perform_subscribe=True):
+                pass
+
+        class LegacyClientInterface(object):
+            def __init__(self, grpc_addr, client_id, device_id,
+                         is_master=False, notifications=None, timeout=1,
+                         num_tries=5):
+                pass
+
+        self.assertFalse(bfrt._supports_keyword(
+            CurrentClientInterface, 'is_master'))
+        self.assertTrue(bfrt._supports_keyword(
+            LegacyClientInterface, 'is_master'))
+        self.assertTrue(bfrt._supports_keyword(
+            lambda **kwargs: None, 'is_master'))
+
+    def test_sde_python_paths_prefer_running_python(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            running_python = 'python{}.{}'.format(
+                sys.version_info[0], sys.version_info[1])
+            current_site = os.path.join(
+                temporary_dir, 'lib', running_python, 'site-packages')
+            legacy_site = os.path.join(
+                temporary_dir, 'lib', 'python2.7', 'site-packages')
+            os.makedirs(os.path.join(current_site, 'tofino'))
+            os.makedirs(os.path.join(legacy_site, 'tofino'))
+
+            paths = bfrt._sde_python_paths(temporary_dir)
+
+        self.assertEqual(paths[:2], [
+            os.path.join(current_site, 'tofino'),
+            current_site,
+        ])
+        self.assertIn(os.path.join(legacy_site, 'tofino'), paths)
+        self.assertIn(legacy_site, paths)
+
+    def test_close_supports_public_and_legacy_stream_teardown(self):
+        class PublicInterface(object):
+            def __init__(self):
+                self.closed = False
+
+            def tear_down_stream(self):
+                self.closed = True
+
+        backend, unused_table, unused_gc = self.backend()
+        public_interface = PublicInterface()
+        backend.interface = public_interface
+        backend.close()
+        self.assertTrue(public_interface.closed)
+        self.assertIsNone(backend.interface)
+
+        backend, unused_table, unused_gc = self.backend()
+        legacy_interface = backend.interface
+        backend.close()
+        self.assertTrue(legacy_interface.closed)
+        self.assertIsNone(backend.interface)
 
     def test_sequential_and_native_batch_programming(self):
         previous = set(((1, 6), (6, 1)))
