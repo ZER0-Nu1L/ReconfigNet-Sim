@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile and smoke-test the site-neutral Tofino pipeline in Open P4 Studio.
+# Compile and test the site-neutral Tofino pipeline in Open P4 Studio.
 
 set -euo pipefail
 
@@ -82,6 +82,11 @@ PYTHONDONTWRITEBYTECODE=1 \
     python3 -m unittest discover \
     -s "$repository_root/targets/tofino/runtime/tests" \
     -v 2>&1 | tee "$artifact_root/runtime-tests.log"
+
+PYTHONDONTWRITEBYTECODE=1 \
+    python3 -m unittest discover \
+    -s "$repository_root/targets/tofino/ci/tests" \
+    -v 2>&1 | tee "$artifact_root/image-lock-tests.log"
 
 if [[ "$run_model" != true ]]; then
     echo "Tofino pipeline compilation and runtime tests passed."
@@ -249,4 +254,87 @@ grep -qx 'ocs-bfrt-initialized' "$marker_file"
 grep -Fq 'Loading OCS profile' "$artifact_root/bfrt-initialize.log"
 grep -Fq 'Initial OCS mapping' "$artifact_root/bfrt-initialize.log"
 
-echo "Tofino model verification passed for $program_name."
+ptf_command=(
+    "$SDE/run_p4_tests.sh"
+    -p "$program_name"
+    --arch tofino
+    --no-veth
+    -t "$repository_root/targets/tofino/ptf"
+    -f "$ports_file"
+    -s test.OCSMappingReconfigurationTest
+    --test-params "timing_file='$artifact_root/ptf-timing.json'"
+)
+ptf_runtime_dir="$artifact_root/ptf-runtime"
+mkdir -p "$ptf_runtime_dir"
+
+set +e
+(
+    cd "$ptf_runtime_dir"
+    PYTHONPATH="$repository_root/agent/python:$repository_root/targets/tofino/runtime:$repository_root" \
+        "${ptf_command[@]}"
+) 2>&1 | tee "$artifact_root/ptf.log"
+ptf_pipeline_status=("${PIPESTATUS[@]}")
+set -e
+
+if ((ptf_pipeline_status[0] != 0 || ptf_pipeline_status[1] != 0)); then
+    printf 'PTF pipeline failed (tests=%d tee=%d)\n' \
+        "${ptf_pipeline_status[0]}" \
+        "${ptf_pipeline_status[1]}" >&2
+    exit 1
+fi
+
+check_runtime_processes "after project PTF completed"
+grep -Fq 'Ran 1 test' "$artifact_root/ptf.log"
+grep -Fq 'OK' "$artifact_root/ptf.log"
+python3 - "$artifact_root/ptf-timing.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding='utf-8') as timing_file:
+    evidence = json.load(timing_file)
+
+expected = {
+    'initial_mapping': [6, 3, 2, 5, 4, 1],
+    'updated_mapping': [2, 1, 4, 3, 6, 5],
+    'initial_permitted_paths': 6,
+    'initial_dropped_paths': 24,
+    'updated_permitted_paths': 6,
+    'retired_paths_dropped': 6,
+}
+for field, expected_value in expected.items():
+    actual_value = evidence.get(field)
+    if actual_value != expected_value:
+        raise SystemExit(
+            '{} mismatch: expected {!r}, got {!r}'.format(
+                field, expected_value, actual_value))
+
+expected_initial = [[1, 6], [2, 3], [3, 2], [4, 5], [5, 4], [6, 1]]
+expected_updated = [[1, 2], [2, 1], [3, 4], [4, 3], [5, 6], [6, 5]]
+for field, expected_value in (
+        ('initial_readback', expected_initial),
+        ('updated_readback', expected_updated),
+        ('restored_readback', expected_initial)):
+    actual_value = evidence.get(field)
+    if actual_value != expected_value:
+        raise SystemExit(
+            '{} mismatch: expected {!r}, got {!r}'.format(
+                field, expected_value, actual_value))
+
+timing = evidence.get('reconfiguration_timing')
+if not isinstance(timing, dict):
+    raise SystemExit('reconfiguration_timing is missing')
+for field, expected_value in (
+        ('strategy', 'DELTA'),
+        ('transport', 'NATIVE_BATCH'),
+        ('delete_entries', 6),
+        ('insert_entries', 6),
+        ('active_entries', 6),
+        ('write_verification', 'SOFTWARE_READBACK')):
+    actual_value = timing.get(field)
+    if actual_value != expected_value:
+        raise SystemExit(
+            'reconfiguration_timing.{} mismatch: expected {!r}, got {!r}'.format(
+                field, expected_value, actual_value))
+PY
+
+echo "Tofino model and project PTF verification passed for $program_name."

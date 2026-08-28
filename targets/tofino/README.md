@@ -29,16 +29,30 @@ The workflow has two validation levels:
 
 - **Compile Tofino pipeline** runs for pull requests, pushes to `main` and
   manual dispatches. It mounts this repository read-only, compiles `ocs.p4`
-  and runs the target-neutral runtime tests.
-- **Load and initialize Tofino model** runs only for pushes to `main` and
+  and runs the target-neutral runtime and image-lock tests.
+- **Load, initialize, and test Tofino model** runs only for pushes to `main` and
   manual dispatches. Its Docker container uses `--privileged` because veth
-  setup, huge pages, the model and `bf_switchd` require it. Pull requests skip
+  setup, huge pages, the model and `bf_switchd` require it. After BFRT
+  initialization, a project PTF test verifies the six permitted paths, the 24
+  other non-self paths that must be dropped, a BFRT mapping change, retirement
+  of the old paths and restoration of the startup mapping. Pull requests skip
   this heavier job by design.
 
 Both jobs use standard `linux/amd64` GitHub-hosted runners. They validate
-compilation and model/BFRT integration only; they do not validate a physical
-Tofino board or any site-specific port mapping. Update the lock only from a
-reviewed release `image-lock.json`; do not replace it with a floating tag.
+compilation and software-model/BFRT/PTF integration only; they do not validate
+a physical Tofino board or any site-specific port mapping. The workflow checks
+that the local lock is byte-for-byte identical to the published Release asset
+and that the asset digest appears in the Release checksum manifest. Update the
+lock only with `image_lock.py update` from a reviewed immutable release; do not
+replace it with a floating tag or hand-edited JSON.
+
+To verify the current lock or adopt a reviewed release, run:
+
+```bash
+python3 targets/tofino/ci/image_lock.py verify
+python3 targets/tofino/ci/image_lock.py update \
+  --release sde-9.13.4-tofino1-r3
+```
 
 ### Reproduce model CI locally
 
@@ -48,10 +62,8 @@ it. The full model command grants the image privileged container access, so
 run only a reviewed digest.
 
 ```bash
-tofino_image=$(
-  python3 -c \
-    'import json; print(json.load(open(".github/tofino-image-lock.json", encoding="utf-8"))["image"])'
-)
+eval "$(python3 targets/tofino/ci/image_lock.py verify)"
+tofino_image=$TOFINO_IMAGE
 repository_root=$PWD
 artifact_root=$(mktemp -d /tmp/reconfignet-tofino-model.XXXXXX)
 mkdir -p "$artifact_root/compile" "$artifact_root/model"
@@ -84,8 +96,10 @@ docker run --rm --privileged \
   'bash targets/tofino/ci/verify-model.sh /artifacts'
 ```
 
-The compile logs and model evidence remain under `$artifact_root`. The image
-and full-model run are intentionally heavyweight compared with P4App/BMv2.
+The compile logs remain under `$artifact_root/compile`. Full-model evidence is
+under `$artifact_root/model`, including `ptf.log`, `ptf-timing.json`, the BFRT
+initialization marker and the model/driver logs. The image and full-model run
+are intentionally heavyweight compared with P4App/BMv2.
 
 Set `SDE_INSTALL` to the BF-SDE installation before starting the launcher.
 `OCS_PYTHON_RUNTIME` may be set when the Agent Python package is installed

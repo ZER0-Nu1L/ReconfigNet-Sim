@@ -21,9 +21,11 @@ file adds only automation-specific working rules.
 - Treat P4App as the lower-cost, more customizable BMv2 integration target.
 - Treat the Tofino model as a heavier compatibility check against the pinned
   external toolchain. Pull requests compile; pushes to `main` and manual runs
-  also load and initialize the model.
+  also load and initialize the model, exercise forwarding/drop behavior,
+  reconfigure the mapping through BFRT and restore the startup state.
 - Do not edit `.github/tofino-image-lock.json` unless the task explicitly
-  includes adopting a reviewed immutable release digest.
+  includes adopting a reviewed immutable release digest. Use the checked-in
+  image-lock tool rather than editing the JSON by hand.
 - Never describe a successful Tofino software-model run as validation of a
   physical board, BSP, SerDes, firmware, driver or optical behavior.
 
