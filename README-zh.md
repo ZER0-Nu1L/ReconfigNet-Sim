@@ -2,6 +2,10 @@
 
 [English](README.md)
 
+[![License](https://img.shields.io/github/license/ZER0-Nu1L/ReconfigNet-Sim.svg)](LICENSE)
+[![P4App](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/p4app.yml/badge.svg?branch=main)](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/p4app.yml)
+[![Tofino model](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/tofino-model.yml/badge.svg?branch=main)](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/tofino-model.yml)
+
 ReconfigNet-Sim 是一个基于可编程交换机、用于低成本研究可重构光网络周边系统集成、控制和部署问题的平台。
 
 ## 项目动机（Motivation）
@@ -48,7 +52,7 @@ ReconfigNet-Sim 不仿真或测量：
 
 ## 为什么选择 P4？（Why P4?）
 
-A P4 switch provides a controllable approximation boundary within which a large class of OCS system-integration questions can be investigated before—and alongside—real hardware。
+P4 交换机提供了一个可控的近似边界，使许多 OCS 系统集成问题能够在真实硬件可用前，以及与真实硬件并行时得到研究。
 
 P4 为这个项目提供了两个互补的实验层次：
 

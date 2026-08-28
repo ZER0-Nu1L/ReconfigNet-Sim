@@ -19,16 +19,73 @@ The repository's [Tofino model workflow](../../.github/workflows/tofino-model.ym
 consumes the independent
 [`open-p4studio-container`](https://github.com/ZER0-Nu1L/open-p4studio-container)
 release by the immutable digest recorded in
-[`tofino-image-lock.json`](../../.github/tofino-image-lock.json). The workflow
-mounts this repository read-only, compiles `ocs.p4`, runs the target-neutral
-runtime tests, loads the generated pipeline into the Tofino 1 model, and
-initializes the site-neutral BFRT profile.
+[`tofino-image-lock.json`](../../.github/tofino-image-lock.json). This is an
+independent community image, not an official Intel, P4.org or p4lang image.
+It provides the pinned P4 compiler, Tofino 1 software model, `bf_switchd` and
+BFRT development environment, but it does not provide hardware BSPs, SerDes
+drivers, firmware or private Intel RDC material.
 
-The job runs on a privileged `linux/amd64` GitHub runner because the model
-needs veth interfaces and huge pages. It validates compilation and model/BFRT
-integration only; it does not validate a physical Tofino board or any
-site-specific port mapping. Update the lock only from a reviewed release
-`image-lock.json`; do not replace it with a floating tag.
+The workflow has two validation levels:
+
+- **Compile Tofino pipeline** runs for pull requests, pushes to `main` and
+  manual dispatches. It mounts this repository read-only, compiles `ocs.p4`
+  and runs the target-neutral runtime tests.
+- **Load and initialize Tofino model** runs only for pushes to `main` and
+  manual dispatches. Its Docker container uses `--privileged` because veth
+  setup, huge pages, the model and `bf_switchd` require it. Pull requests skip
+  this heavier job by design.
+
+Both jobs use standard `linux/amd64` GitHub-hosted runners. They validate
+compilation and model/BFRT integration only; they do not validate a physical
+Tofino board or any site-specific port mapping. Update the lock only from a
+reviewed release `image-lock.json`; do not replace it with a floating tag.
+
+### Reproduce model CI locally
+
+Run these commands from the repository root on a `linux/amd64` host with
+Docker daemon access. Authenticate to GHCR first if package access requires
+it. The full model command grants the image privileged container access, so
+run only a reviewed digest.
+
+```bash
+tofino_image=$(
+  python3 -c \
+    'import json; print(json.load(open(".github/tofino-image-lock.json", encoding="utf-8"))["image"])'
+)
+repository_root=$PWD
+artifact_root=$(mktemp -d /tmp/reconfignet-tofino-model.XXXXXX)
+mkdir -p "$artifact_root/compile" "$artifact_root/model"
+
+docker pull "$tofino_image"
+
+docker run --rm "$tofino_image" bash -ceu '
+  test "$SDE" = /opt/open-p4studio
+  test "$SDE_INSTALL" = /opt/open-p4studio/install
+  test -x "$SDE_INSTALL/bin/bf-p4c"
+  test -x "$SDE_INSTALL/bin/tofino-model"
+  test -x "$SDE_INSTALL/bin/bf_switchd"
+  test -x /usr/local/bin/open-p4studio-selftest
+'
+
+docker run --rm \
+  --volume "$repository_root:/workspace/ReconfigNet-Sim:ro" \
+  --volume "$artifact_root/compile:/artifacts" \
+  --workdir /workspace/ReconfigNet-Sim \
+  "$tofino_image" \
+  bash -ceu \
+  'bash targets/tofino/ci/verify-model.sh /artifacts --compile-only'
+
+docker run --rm --privileged \
+  --volume "$repository_root:/workspace/ReconfigNet-Sim:ro" \
+  --volume "$artifact_root/model:/artifacts" \
+  --workdir /workspace/ReconfigNet-Sim \
+  "$tofino_image" \
+  bash -ceu \
+  'bash targets/tofino/ci/verify-model.sh /artifacts'
+```
+
+The compile logs and model evidence remain under `$artifact_root`. The image
+and full-model run are intentionally heavyweight compared with P4App/BMv2.
 
 Set `SDE_INSTALL` to the BF-SDE installation before starting the launcher.
 `OCS_PYTHON_RUNTIME` may be set when the Agent Python package is installed
