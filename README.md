@@ -1,6 +1,23 @@
-# ReconfigNet-Sim
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/branding/reconfignet-sim-logo-dark.svg">
+    <img alt="ReconfigNet-Sim" src="docs/assets/branding/reconfignet-sim-logo-light.svg" width="64%">
+  </picture>
+</p>
 
-[中文](README-zh.md)
+<h3 align="center">
+Programmable-switch research infrastructure for reconfigurable optical networks.
+</h3>
+
+<p align="center">
+  <a href="README-zh.md"><b>中文</b></a>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/ZER0-Nu1L/ReconfigNet-Sim.svg"></a>
+  <a href="https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/p4app.yml"><img alt="P4App" src="https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/p4app.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/tofino-model.yml"><img alt="Tofino model" src="https://github.com/ZER0-Nu1L/ReconfigNet-Sim/actions/workflows/tofino-model.yml/badge.svg?branch=main"></a>
+</p>
 
 ReconfigNet-Sim is a programmable-switch platform for low-cost investigation of the system-integration, control and deployment problems surrounding reconfigurable optical networks.
 
