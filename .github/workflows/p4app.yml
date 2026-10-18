@@ -2,9 +2,13 @@ name: P4App
 
 on:
   pull_request:
+    paths-ignore:
+      - 'blog/**'
   push:
     branches:
       - main
+    paths-ignore:
+      - 'blog/**'
   workflow_dispatch:
 
 permissions:

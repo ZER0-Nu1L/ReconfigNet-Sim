@@ -16,6 +16,9 @@ file adds only automation-specific working rules.
 
 ## CI and target maintenance
 
+- P4App and Tofino workflows skip automatic PR and push runs when all changed
+  files are under `blog/`. Keep that exclusion on both events; mixed changes
+  and manual runs must retain the target checks.
 - When paths move, update both workflows, Make targets, dependency and cache
   paths, target documentation and contributor commands in the same change.
 - Treat P4App as the lower-cost, more customizable BMv2 integration target.

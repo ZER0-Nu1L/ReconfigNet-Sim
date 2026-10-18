@@ -18,6 +18,11 @@ packet-switch emulation results rather than optical-hardware claims.
 
 ## CI target matrix
 
+Changes confined to `blog/` run the Blog workflow and skip automatic P4App
+and Tofino runs on both PRs and pushes. If any file outside `blog/` changes,
+the target workflows retain their usual coverage. Manual target runs remain
+available through `workflow_dispatch`.
+
 P4App and the Tofino model validate different integration boundaries. They are
 complementary checks rather than interchangeable implementations of the same
 CI environment.
