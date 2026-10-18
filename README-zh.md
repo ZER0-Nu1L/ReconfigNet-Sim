@@ -11,6 +11,7 @@ Programmable-switch research infrastructure for reconfigurable optical networks.
 
 <p align="center">
   <a href="README.md"><b>English</b></a>
+  · <a href="https://zer0-nu1l.github.io/ReconfigNet-Sim/zh/">博客</a>
 </p>
 
 <p align="center">

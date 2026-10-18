@@ -37,3 +37,18 @@ file adds only automation-specific working rules.
   user explicitly authorizes that action.
 - Before publishing previously local history, scan it for secrets, private
   deployment data and unexpected binary artifacts.
+
+## Blog deployment
+
+- Follow [`blog/deployment.md`](blog/deployment.md) for GitHub Pages setup,
+  CLI publication, domain troubleshooting, verification and rollback.
+- The public site is `https://zer0-nu1l.github.io/ReconfigNet-Sim/`. Preserve
+  Astro's matching `site` and `/ReconfigNet-Sim` base path.
+- Pages uses GitHub Actions and publishes only from `main` through the Blog
+  workflow. A feature-branch or PR run checks the site but does not deploy it.
+- Keep `blog/writing/`, `node_modules/`, `dist/`, browser reports and private
+  artifacts out of commits. Run the blog checks and inspect the staged files
+  before an authorized push or merge.
+- A custom domain on `ZER0-Nu1L/ZER0-Nu1L.github.io` also redirects project
+  sites. Check both repositories' Pages settings when diagnosing redirects;
+  do not add a `CNAME` file to this project to fix an inherited redirect.

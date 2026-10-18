@@ -1,0 +1,18 @@
+---
+import { href, siteName } from '../lib/site';
+const english = href('en/');
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{siteName}</title>
+    <meta http-equiv="refresh" content={`0;url=${english}`} />
+    <link rel="canonical" href={new URL(english, Astro.site)} />
+  </head>
+  <body>
+    <h1>{siteName}</h1>
+    <p><a href={english}>Continue in English</a> · <a href={href('zh/')} lang="zh-CN">阅读中文版</a></p>
+  </body>
+</html>

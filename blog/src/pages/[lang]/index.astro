@@ -1,0 +1,30 @@
+---
+import Site from '../../layouts/Site.astro';
+import { languages, text, href, formatDate, postSlug, publishedPosts } from '../../lib/site';
+export function getStaticPaths() {
+  return languages.map(lang => ({ params: { lang }, props: { lang } }));
+}
+const { lang } = Astro.props;
+const posts = await publishedPosts(lang);
+const labels = text[lang];
+---
+<Site lang={lang}>
+  <section class="intro" aria-labelledby="intro-title">
+    <p class="eyebrow">{lang === 'zh' ? '研究笔记 · 系统实践' : 'Research notes · Systems in practice'}</p>
+    <h1 id="intro-title">{labels.subtitle}</h1>
+    <p class="lede">{labels.description}</p>
+  </section>
+  <section aria-labelledby="latest">
+    <h2 id="latest" class="section-label">{labels.latest}</h2>
+    <ul class="post-list">
+      {posts.map(post => <li class="post-card">
+        <time datetime={post.data.date}>{formatDate(post.data.date, lang)}</time>
+        <div>
+          <h3><a href={href(`${lang}/posts/${postSlug(post.id)}/`)}>{post.data.title}</a></h3>
+          <p>{post.data.description}</p>
+          <a class="read-link" href={href(`${lang}/posts/${postSlug(post.id)}/`)} aria-label={`${labels.read}: ${post.data.title}`}>{labels.read} <span aria-hidden="true">→</span></a>
+        </div>
+      </li>)}
+    </ul>
+  </section>
+</Site>

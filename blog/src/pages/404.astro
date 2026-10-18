@@ -1,0 +1,15 @@
+---
+import Site from '../layouts/Site.astro';
+import { href } from '../lib/site';
+---
+<Site lang="en" title="Page not found" noindex>
+  <section class="article">
+    <p class="eyebrow">404</p>
+    <h1>Page not found</h1>
+    <div class="prose">
+      <p>The page may have moved, or the address may be incomplete.</p>
+      <p><a href={href('en/')}>Return to the blog →</a></p>
+      <p lang="zh-CN">未找到这个页面。<a href={href('zh/')}>返回中文首页 →</a></p>
+    </div>
+  </section>
+</Site>

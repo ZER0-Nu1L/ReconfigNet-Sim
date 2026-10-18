@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.astro/
+playwright-report/
+test-results/
+/writing/
+
+# Keep source helpers despite the repository's Python lib/ ignore rule.
+!/src/lib/
+!/src/lib/**
