@@ -1,5 +1,6 @@
 ---
 import '../styles/site.css';
+import 'katex/dist/katex.min.css';
 import mark from '../../../docs/assets/branding/reconfignet-sim-mark-light.svg?url';
 import darkMark from '../../../docs/assets/branding/reconfignet-sim-mark-dark.svg?url';
 import { href, otherLanguage, repository, siteName, text, type Language } from '../lib/site';
@@ -12,8 +13,9 @@ interface Props {
   noindex?: boolean;
   article?: boolean;
   date?: string;
+  languageRoute?: string;
 }
-const { lang, title, description = text[lang].description, route = '', noindex = false, article = false, date } = Astro.props;
+const { lang, title, description = text[lang].description, route = '', noindex = false, article = false, date, languageRoute = noindex ? '' : route } = Astro.props;
 const labels = text[lang];
 const canonical = new URL(Astro.url.pathname, Astro.site);
 const pageTitle = title ? `${title} · ${siteName}` : siteName;
@@ -97,7 +99,7 @@ const pageTitle = title ? `${title} · ${siteName}` : siteName;
         <a href={href(`${lang}/`)} aria-current={route === '' && !noindex ? 'page' : undefined}>{labels.blog}</a>
         <a href={href(`${lang}/about/`)} aria-current={route === 'about/' ? 'page' : undefined}>{labels.about}</a>
         <a href={repository}>GitHub <span aria-hidden="true">↗</span></a>
-        <a class="language-link" href={href(`${otherLanguage(lang)}/${noindex ? '' : route}`)} lang={otherLanguage(lang)} data-language-switch>{labels.language}</a>
+        <a class="language-link" href={href(`${otherLanguage(lang)}/${languageRoute}`)} lang={otherLanguage(lang)} data-language-switch>{labels.language}</a>
         <button type="button" class="theme-toggle" data-theme-toggle data-label-light={labels.switchToLight} data-label-dark={labels.switchToDark} aria-label={labels.switchToDark} aria-pressed="false" hidden>
           <svg class="theme-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" /></svg>
           <svg class="theme-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></svg>

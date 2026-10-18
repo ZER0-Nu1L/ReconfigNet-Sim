@@ -1,0 +1,164 @@
+---
+import type { MarkdownHeading } from 'astro';
+import OutlineItems from './OutlineItems.astro';
+interface Props {
+  headings: MarkdownHeading[];
+  lang: 'en' | 'zh';
+}
+const { headings, lang } = Astro.props;
+interface Entry extends MarkdownHeading { children: Entry[] }
+const entries: Entry[] = [];
+const stack: Entry[] = [];
+for (const heading of headings.filter(({ depth }) => depth >= 2 && depth <= 6)) {
+  const entry: Entry = { ...heading, children: [] };
+  while (stack.length && stack.at(-1)!.depth >= heading.depth) stack.pop();
+  (stack.at(-1)?.children ?? entries).push(entry);
+  stack.push(entry);
+}
+const label = lang === 'zh' ? '目录' : 'On this page';
+---
+{entries.length > 0 && <div class="outline-track"><aside class="article-outline" data-outline>
+  <details class="outline-panel" open>
+    <summary>{label}<span aria-hidden="true"> / Outline</span></summary>
+    <nav class="outline-nav" aria-label={label}>
+      <OutlineItems entries={entries} lang={lang} />
+    </nav>
+  </details>
+  <div class="outline-resizer" data-outline-resizer role="separator" tabindex="0" aria-orientation="vertical" aria-label={lang === 'zh' ? '调整大纲宽度' : 'Resize outline'} aria-valuemin="160" aria-valuemax="480" aria-valuenow="200" hidden></div>
+</aside></div>}
+<script>
+  const outline = document.querySelector<HTMLElement>('[data-outline]');
+  if (outline) {
+    const details = outline.querySelector<HTMLDetailsElement>('.outline-panel')!;
+    const nav = outline.querySelector<HTMLElement>('.outline-nav')!;
+    const links = [...outline.querySelectorAll<HTMLAnchorElement>('[data-outline-link]')];
+    const entries = links.map(link => ({
+      link, heading: document.getElementById(decodeURIComponent(link.hash.slice(1))),
+    })).filter(entry => entry.heading);
+    const desktop = matchMedia('(min-width: 1280px)');
+    const setExpanded = () => { details.open = desktop.matches; };
+    setExpanded();
+    desktop.addEventListener('change', setExpanded);
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+    let animation = 0;
+    const stopScroll = () => { cancelAnimationFrame(animation); };
+    window.addEventListener('wheel', stopScroll, { passive: true });
+    window.addEventListener('touchstart', stopScroll, { passive: true });
+    window.addEventListener('keydown', stopScroll);
+    nav.addEventListener('click', event => {
+      const link = (event.target as Element).closest<HTMLAnchorElement>('a[data-outline-link]');
+      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const heading = document.getElementById(decodeURIComponent(link.hash.slice(1)));
+      if (!heading) return;
+      event.preventDefault();
+      stopScroll();
+      if (!desktop.matches) details.open = false;
+      if (location.hash !== link.hash) history.pushState(null, '', link.hash);
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+      // Measure after the mobile directory closes, then finish even long jumps in 240ms.
+      animation = requestAnimationFrame(() => {
+        const start = window.scrollY;
+        const margin = parseFloat(getComputedStyle(heading).scrollMarginTop) || 24;
+        const target = Math.max(0, Math.min(start + heading.getBoundingClientRect().top - margin,
+          document.documentElement.scrollHeight - innerHeight));
+        if (reducedMotion.matches) { window.scrollTo(0, target); return; }
+        const started = performance.now();
+        const tick = (now: number) => {
+          const progress = Math.min(1, (now - started) / 240);
+          window.scrollTo(0, start + (target - start) * (1 - (1 - progress) ** 3));
+          if (progress < 1) animation = requestAnimationFrame(tick);
+        };
+        animation = requestAnimationFrame(tick);
+      });
+    });
+
+    const resizer = outline.querySelector<HTMLElement>('[data-outline-resizer]')!;
+    const widthKey = 'reconfignet-sim-outline-width';
+    let preferredWidth = 200;
+    try {
+      const saved = Number(localStorage.getItem(widthKey));
+      if (Number.isFinite(saved) && saved >= 160 && saved <= 480) preferredWidth = saved;
+    } catch { /* Resizing also works without storage. */ }
+    const maximumWidth = () => Math.floor(Math.min(480, innerWidth * .35, Math.min(1240, innerWidth - 48) - 600));
+    const applyWidth = () => {
+      if (!desktop.matches) return;
+      const width = Math.max(160, Math.min(maximumWidth(), preferredWidth));
+      document.documentElement.style.setProperty('--outline-width', `${width}px`);
+      resizer.setAttribute('aria-valuenow', String(Math.round(width)));
+      resizer.setAttribute('aria-valuemax', String(maximumWidth()));
+    };
+    const saveWidth = () => {
+      try { localStorage.setItem(widthKey, String(preferredWidth)); } catch { /* Keep this page's width. */ }
+    };
+    resizer.hidden = false;
+    let drag: { pointer: number; x: number; width: number } | undefined;
+    resizer.addEventListener('pointerdown', event => {
+      if (!desktop.matches || event.button !== 0) return;
+      event.preventDefault();
+      drag = { pointer: event.pointerId, x: event.clientX, width: outline.getBoundingClientRect().width };
+      resizer.setPointerCapture(event.pointerId);
+      document.documentElement.dataset.resizingOutline = '';
+    });
+    resizer.addEventListener('pointermove', event => {
+      if (!drag || event.pointerId !== drag.pointer) return;
+      preferredWidth = Math.max(160, Math.min(maximumWidth(), drag.width + event.clientX - drag.x));
+      applyWidth();
+    });
+    const finishDrag = () => {
+      if (!drag) return;
+      drag = undefined;
+      delete document.documentElement.dataset.resizingOutline;
+      saveWidth();
+    };
+    resizer.addEventListener('lostpointercapture', finishDrag);
+    resizer.addEventListener('pointerup', finishDrag);
+    resizer.addEventListener('pointercancel', finishDrag);
+    resizer.addEventListener('keydown', event => {
+      if (!desktop.matches || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const currentWidth = outline.getBoundingClientRect().width;
+      const step = event.shiftKey ? 40 : 10;
+      preferredWidth = event.key === 'Home' ? 160 : event.key === 'End' ? maximumWidth()
+        : Math.max(160, Math.min(maximumWidth(), currentWidth + (event.key === 'ArrowRight' ? step : -step)));
+      applyWidth();
+      saveWidth();
+    });
+    window.addEventListener('resize', applyWidth);
+    applyWidth();
+    let current: HTMLAnchorElement | undefined;
+    const update = () => {
+      let active: HTMLAnchorElement | undefined;
+      for (const { link, heading } of entries) {
+        if (heading!.getBoundingClientRect().top <= 120) active = link;
+      }
+      if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4) {
+        active = entries.at(-1)?.link;
+      }
+      if (active === current) return;
+      current?.removeAttribute('aria-current');
+      active?.setAttribute('aria-current', 'location');
+      current = active;
+      if (active && desktop.matches) {
+        // A collapsed branch stays collapsed; highlight and reveal its visible ancestor.
+        let visible = active;
+        for (let branch = active.closest('details.outline-branch'); branch;
+          branch = branch.parentElement?.closest('details.outline-branch') ?? null) {
+          if (!(branch as HTMLDetailsElement).open) visible = branch.querySelector<HTMLAnchorElement>('summary a')!;
+        }
+        const box = visible.getBoundingClientRect();
+        const container = nav.getBoundingClientRect();
+        if (box.top < container.top) nav.scrollTop -= container.top - box.top + 8;
+        else if (box.bottom > container.bottom) nav.scrollTop += box.bottom - container.bottom + 8;
+      }
+    };
+    let scheduled = false;
+    window.addEventListener('scroll', () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => { scheduled = false; update(); });
+    }, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+  }
+</script>

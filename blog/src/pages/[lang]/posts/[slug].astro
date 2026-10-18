@@ -1,20 +1,27 @@
 ---
-import { render } from 'astro:content';
+import { getCollection, render } from 'astro:content';
 import Site from '../../../layouts/Site.astro';
-import { publishedPosts, postSlug, formatDate, href, repository, text, type Language } from '../../../lib/site';
+import Outline from '../../../components/Outline.astro';
+import { postSlug, otherLanguage, formatDate, href, repository, text, type Language } from '../../../lib/site';
 export async function getStaticPaths() {
-  return (await publishedPosts()).map(post => ({
+  const posts = await getCollection('posts', ({ data }) => import.meta.env.DEV || !data.draft);
+  return posts.map(post => ({
     params: { lang: post.id.split('/')[0], slug: postSlug(post.id) }, props: { post },
   }));
 }
 const { post } = Astro.props;
 const lang = post.id.split('/')[0] as Language;
-const { Content } = await render(post);
+const route = `posts/${postSlug(post.id)}/`;
+const counterpart = (await getCollection('posts')).find(entry => entry.id === `${otherLanguage(lang)}/${postSlug(post.id)}`);
+const languageRoute = counterpart && (import.meta.env.DEV || !counterpart.data.draft) ? route : '';
+const { Content, headings } = await render(post);
 ---
-<Site lang={lang} title={post.data.title} description={post.data.description} route={`posts/${postSlug(post.id)}/`} article date={post.data.date}>
-  <article class="article">
+<Site lang={lang} title={post.data.title} description={post.data.description} route={route} languageRoute={languageRoute} article date={post.data.date} noindex={post.data.draft}>
+  <article class:list={['article', { 'article-with-outline': headings.some(({ depth }) => depth >= 2) }]}>
+    <Outline headings={headings} lang={lang} />
     <header class="article-header">
       <a class="back-link" href={href(`${lang}/`)}><span aria-hidden="true">←</span> {text[lang].back}</a>
+      {post.data.draft && <p class="eyebrow">{lang === 'zh' ? '草稿 · 仅本地开发预览' : 'Draft · Local development preview'}</p>}
       <h1>{post.data.title}</h1>
       <div class="article-meta">
         <p>By: <span>{post.data.author}</span></p>
@@ -24,7 +31,12 @@ const { Content } = await render(post);
     </header>
     <div class="prose"><Content /></div>
     <footer class="article-footer">
-      <p>Enjoy the blog? <a href={repository}>Give ReconfigNet-Sim a star <span aria-hidden="true">☆</span></a></p>
+      <p>
+        <span>Enjoy the blog? Give ReconfigNet-Sim a star</span>
+        <a class="github-stars" href={repository} aria-label="Give ReconfigNet-Sim a star">
+          <img src="https://img.shields.io/github/stars/ZER0-Nu1L/ReconfigNet-Sim?style=social" alt="GitHub repository stars" height="20" loading="lazy" decoding="async" />
+        </a>
+      </p>
     </footer>
   </article>
 </Site>

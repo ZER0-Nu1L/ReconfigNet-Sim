@@ -70,6 +70,76 @@ test('articles show localized authors, publication dates and the repository Star
     await expect(page.locator('.article-meta time')).toHaveAttribute('datetime', '2026-09-15');
     await expect(page.locator('.article-footer')).toContainText('Enjoy the blog?');
     await expect(page.getByRole('link', { name: 'Give ReconfigNet-Sim a star' })).toHaveAttribute('href', 'https://github.com/ZER0-Nu1L/ReconfigNet-Sim');
+    await expect(page.locator('.github-stars img')).toHaveAttribute('src', 'https://img.shields.io/github/stars/ZER0-Nu1L/ReconfigNet-Sim?style=social');
+  }
+});
+
+test('article outline adapts to the viewport and follows section navigation', async ({ page }) => {
+  await page.goto(`${base}/en/posts/hello-optical-world/`);
+  const outline = page.locator('[data-outline]');
+  const disclosure = outline.locator('.outline-panel');
+  const links = outline.locator('a');
+  const desktop = page.viewportSize()!.width >= 1280;
+  if (desktop) {
+    await expect(outline).toHaveCSS('position', 'sticky');
+    const sidebar = (await outline.boundingBox())!;
+    const article = (await page.locator('article').boundingBox())!;
+    expect(sidebar.x + sidebar.width).toBeLessThan(article.x);
+  } else {
+    await expect(disclosure).not.toHaveAttribute('open');
+    await disclosure.locator('summary').click();
+  }
+  await expect(links).toHaveCount(2);
+  const target = await links.first().getAttribute('href');
+  await links.first().click();
+  await expect(page).toHaveURL(new RegExp(`${target}$`));
+  if (!desktop) await expect(disclosure).not.toHaveAttribute('open');
+  if (desktop) await expect(links.first()).toHaveAttribute('aria-current', 'location');
+  await page.emulateMedia({ media: 'print' });
+  await expect(outline).toBeHidden();
+});
+
+test('desktop outline can be resized by dragging or keyboard and remembers its width', async ({ page }) => {
+  test.skip(page.viewportSize()!.width < 1280, 'Resize handle is available on desktop.');
+  await page.goto(`${base}/en/posts/hello-optical-world/`);
+  const outline = page.locator('[data-outline]');
+  const handle = page.getByRole('separator', { name: 'Resize outline' });
+  const start = (await handle.boundingBox())!;
+  const width = (await outline.boundingBox())!.width;
+  await page.mouse.move(start.x + start.width / 2, start.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(start.x + start.width / 2 + 120, start.y + 30, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await outline.boundingBox())!.width).toBeCloseTo(width + 120, 0);
+  await page.reload();
+  await expect.poll(async () => (await outline.boundingBox())!.width).toBeCloseTo(width + 120, 0);
+  await handle.focus();
+  await page.keyboard.press('End');
+  await expect(handle).toHaveAttribute('aria-valuenow', (await handle.getAttribute('aria-valuemax'))!);
+  const sidebar = (await outline.boundingBox())!;
+  const article = (await page.locator('article').boundingBox())!;
+  expect(sidebar.x + sidebar.width).toBeLessThan(article.x);
+  expect(article.width).toBeGreaterThanOrEqual(600);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('desktop outline and its resize divider stop before the site footer', async ({ page }) => {
+  test.skip(page.viewportSize()!.width < 1280, 'The outline is in the page flow on mobile.');
+  for (const height of [600, 900]) {
+    await page.setViewportSize({ width: 1440, height });
+    await page.goto(`${base}/en/posts/hello-optical-world/`);
+    const outline = page.locator('[data-outline]');
+    const handle = page.getByRole('separator', { name: 'Resize outline' });
+    await handle.focus();
+    await page.keyboard.press('End');
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const footer = (await page.locator('.site-footer').boundingBox())!;
+    await expect.poll(async () => {
+      const box = (await outline.boundingBox())!;
+      return box.y + box.height;
+    }).toBeLessThanOrEqual(footer.y);
+    const divider = (await handle.boundingBox())!;
+    expect(divider.y + divider.height).toBeLessThanOrEqual(footer.y);
   }
 });
 

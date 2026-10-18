@@ -1,0 +1,20 @@
+---
+import type { MarkdownHeading } from 'astro';
+interface Entry extends MarkdownHeading { children: Entry[] }
+interface Props { entries: Entry[]; lang: 'en' | 'zh' }
+const { entries, lang } = Astro.props;
+const toggleLabel = lang === 'zh' ? '展开或折叠子章节' : 'Expand or collapse subsections';
+---
+<ol>
+  {entries.map(entry => <li>
+    {entry.children.length ? <details class="outline-branch">
+      <summary class="outline-row" title={toggleLabel}>
+        <span class="outline-chevron" aria-hidden="true" title={toggleLabel}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M3.5 1.5 9 6l-5.5 4.5Z" /></svg>
+        </span>
+        <a href={`#${encodeURIComponent(entry.slug)}`} title={entry.text} data-outline-link>{entry.text}</a>
+      </summary>
+      <Astro.self entries={entry.children} lang={lang} />
+    </details> : <a class="outline-leaf" href={`#${encodeURIComponent(entry.slug)}`} title={entry.text} data-outline-link>{entry.text}</a>}
+  </li>)}
+</ol>
