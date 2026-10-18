@@ -67,11 +67,48 @@ draft: true
 
 Both files must have the same publication date and `draft: false` to publish. An unpaired draft may be saved while writing. Drafts are excluded from article routes, lists, RSS, and the sitemap. Keep translations equivalent in claims, figures, and references; they need not be literal sentence-by-sentence copies.
 
-Every article, including drafts, requires a nonempty `author` string. Use the author's name in the article's language: `Changbo Wu` in English and `吴昌博` in Chinese for Hello Optical World. The article template displays `By:` and `Date:` below the title and adds the GitHub Star link after the body; do not duplicate these in the Markdown text.
+With `npm run dev`, drafts are accessible directly at `/ReconfigNet-Sim/<lang>/posts/<slug>/`, with a draft notice and `noindex`. They stay out of article lists and feeds. Production builds and `npm run preview` exclude draft article routes. Draft dates are provisional until publication.
+
+When both draft translations exist, the language switch opens the corresponding article; an unpaired draft links to the other language's home. The published OCS article lives at `/ReconfigNet-Sim/en/posts/ocs-control-arch/` and `/ReconfigNet-Sim/zh/posts/ocs-control-arch/`. Its Chinese figures live in `public/images/ocs-control-arch/`, and English figures in its `en/` subdirectory.
+
+Every article, including drafts, requires a nonempty `author` string. Use the author's name in the article's language: `Changbo Wu` in English and `吴昌博` in Chinese for Hello Optical World. The article template displays `By:` and `Date:` below the title and adds the Star prompt and a linked Shields.io GitHub stars badge after the body; do not duplicate these in the Markdown text. The badge loads its current count from Shields.io when the reader reaches the footer, following the presentation in UCCL's articles.
 
 The navigation includes a light/dark theme switch. First visits follow the system preference; a manual choice is saved in local storage under `reconfignet-sim-theme` and shared across pages and languages. Without JavaScript, the site follows the system theme. Print output uses the light palette.
 
 Markdown supports fenced code, tables, images, footnotes, and linked headings. Store final article images in `public/images/<slug>/` so both languages can share them. Reference these public images with the site base path, for example `![Topology diagram](/ReconfigNet-Sim/images/hello-optical-world/topology.svg)`. For links to another article, use its full site path including `/ReconfigNet-Sim/` and the reader's language. Do not use workstation paths or private testbed links.
+
+Math uses KaTeX: `$T_{\text{ready}} = C + P$` for inline formulas, or `$$` on separate lines around a display equation. Math also works inside table cells. In prose, use `200 μs` and `5 ms`; in formulas, use `$200\,\mu\mathrm{s}$` and `$5\,\mathrm{ms}$` for spaced, upright units. KaTeX styles and fonts are bundled locally, and rendered MathML is available to assistive readers.
+
+## Article template, summaries, figures and outline
+
+Start a Chinese article by copying [templates/post-zh.md](templates/post-zh.md) to `src/content/posts/zh/<slug>.md`. Update its title, description, date and image paths; retain `draft: true` while previewing locally. For English, use the same structure with localized metadata and captions. Templates live outside the content collection and are not published.
+
+Write a TL;DR as a blockquote beginning with `[!TLDR]`. Blank lines inside the block also need `>`. The renderer turns it into an accessible summary card with a lightbulb title and theme-aware background; normal blockquotes keep their usual appearance. Paragraphs and lists both work:
+
+```markdown
+> [!TLDR]
+>
+> - **Main finding.** What the reader should remember.
+> - **Evidence and limits.** Where the finding applies.
+```
+
+For a captioned figure, write a standalone Markdown image followed immediately by an italic caption paragraph, separated by one blank line. Begin the caption with `图 N：` or `Figure N:`. The renderer combines them into `<figure id="figure-N">` with a `<figcaption>`; links, emphasis and inline code inside the caption are preserved. Plain images without this convention remain plain images.
+
+```markdown
+![Alternative text describing the important visual information](/ReconfigNet-Sim/images/your-slug/overview.svg)
+
+*Figure 1: What is compared, how to read it, and the relevant conditions. Source: [reference](https://example.org/).*
+
+See [Figure 1](#figure-1).
+```
+
+Use alt text to describe the image for readers who cannot see it. Use the visible caption to explain the figure, its conditions, and any source or adaptation credit. Keep figure numbers unique and ordered within each article; numbering is explicit, not automatic. Caption text is smaller and centered below the image, with colors following the selected theme. Existing SVG/PNG colors are preserved; a dark image variant is not generated automatically.
+
+The TL;DR styling takes inspiration from [UCCL's MRC article](https://uccl-project.github.io/posts/openai-mrc/). That article and [rdmatop](https://uccl-project.github.io/posts/rdma-monitoring/) use centered italic paragraphs for captions; our renderer provides a similar presentation with semantic figure/caption markup.
+
+Every article automatically gets a hierarchical outline from its `##` through `######` headings. Child sections start collapsed. Click the triangle beside a parent to expand or collapse its children; click the title to navigate. Rows use indentation, bold top-level titles, and single-line truncation; hover over a title to read its full text. Navigation finishes with a quick 240ms scroll and respects the system's reduced-motion preference. Scrolling highlights the current section, including its parent when the child is collapsed.
+
+At widths of 1280px and above, the outline sticks to the left within the article bounds and stops before the site footer. Drag its right divider to change its width and the space available to the article. The divider also accepts Left/Right arrow keys (Shift for larger steps), Home (minimum) and End (maximum). Width is constrained to preserve readable article space and saved in local storage under `reconfignet-sim-outline-width`; resizing still works if storage is disabled. On smaller screens the outline becomes a collapsible directory above the article and the divider is hidden. Native anchor links and collapsible branches also work without JavaScript. Articles without section headings have no outline; the outline is hidden in print.
 
 ## Review and publication boundaries
 
