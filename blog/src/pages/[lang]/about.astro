@@ -1,0 +1,30 @@
+---
+import Site from '../../layouts/Site.astro';
+import { languages, text, repository } from '../../lib/site';
+export function getStaticPaths() {
+  return languages.map(lang => ({ params: { lang }, props: { lang } }));
+}
+const { lang } = Astro.props;
+---
+<Site lang={lang} title={text[lang].about} route="about/">
+  <article class="article">
+    <header class="article-header">
+      <p class="eyebrow">ReconfigNet-Sim</p>
+      <h1>{lang === 'zh' ? '关于这个博客' : 'About this blog'}</h1>
+      <p class="lede">{text[lang].subtitle}</p>
+    </header>
+    <div class="prose">
+      {lang === 'en' ? <>
+        <p>ReconfigNet-Sim is programmable-switch research infrastructure for investigating the system-integration, control, and deployment problems surrounding reconfigurable optical networks.</p>
+        <p>This blog shares research notes and engineering lessons from building that infrastructure. We write for researchers working on reconfigurable networks, and publish each article in English and Chinese.</p>
+        <p>Our experiments have an explicit boundary: packet-switch emulation helps us study the surrounding system. Optical behavior requires validation with physical optical hardware.</p>
+        <p>Explore the <a href={repository}>project on GitHub</a>, read the <a href={`${repository}/blob/main/docs/ocs-simulation-principles-and-boundaries.md`}>simulation boundaries</a>, or use <a href={`${repository}/issues`}>project issues</a> to discuss the work.</p>
+      </> : <>
+        <p>ReconfigNet-Sim 是基于可编程交换机的研究基础设施，用于研究可重构光网络周边的系统集成、控制和部署问题。</p>
+        <p>这个博客分享建设这一基础设施过程中的研究笔记与工程经验，面向可重构网络研究者，每篇文章同步提供英文和中文版本。</p>
+        <p>我们的实验有明确的边界：报文交换仿真帮助我们研究周边系统，光学行为则需要真实光交换硬件的验证。</p>
+        <p>欢迎访问 <a href={repository}>GitHub 项目</a>、阅读<a href={`${repository}/blob/main/docs/ocs-simulation-principles-and-boundaries-zh.md`}>仿真边界文档</a>，或通过 <a href={`${repository}/issues`}>项目 Issues</a> 交流。</p>
+      </>}
+    </div>
+  </article>
+</Site>

@@ -1,0 +1,30 @@
+---
+import { render } from 'astro:content';
+import Site from '../../../layouts/Site.astro';
+import { publishedPosts, postSlug, formatDate, href, repository, text, type Language } from '../../../lib/site';
+export async function getStaticPaths() {
+  return (await publishedPosts()).map(post => ({
+    params: { lang: post.id.split('/')[0], slug: postSlug(post.id) }, props: { post },
+  }));
+}
+const { post } = Astro.props;
+const lang = post.id.split('/')[0] as Language;
+const { Content } = await render(post);
+---
+<Site lang={lang} title={post.data.title} description={post.data.description} route={`posts/${postSlug(post.id)}/`} article date={post.data.date}>
+  <article class="article">
+    <header class="article-header">
+      <a class="back-link" href={href(`${lang}/`)}><span aria-hidden="true">←</span> {text[lang].back}</a>
+      <h1>{post.data.title}</h1>
+      <div class="article-meta">
+        <p>By: <span>{post.data.author}</span></p>
+        <p>Date: <time datetime={post.data.date}>{formatDate(post.data.date, lang)}</time></p>
+      </div>
+      <p class="lede">{post.data.description}</p>
+    </header>
+    <div class="prose"><Content /></div>
+    <footer class="article-footer">
+      <p>Enjoy the blog? <a href={repository}>Give ReconfigNet-Sim a star <span aria-hidden="true">☆</span></a></p>
+    </footer>
+  </article>
+</Site>
