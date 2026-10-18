@@ -14,15 +14,27 @@ Pages site are:
 gh auth status
 gh api repos/ZER0-Nu1L/ReconfigNet-Sim/pages
 gh api --method PUT repos/ZER0-Nu1L/ReconfigNet-Sim/pages \
-  -f build_type=workflow -F https_enforced=true
+  -f build_type=workflow
 ```
 
 If the GET returns 404 because Pages has never been enabled, create the site
-with `gh api --method POST repos/ZER0-Nu1L/ReconfigNet-Sim/pages -f build_type=workflow`,
-then enable HTTPS with the PUT above. The `github-pages` environment must allow
-deployments from `main`; retain any configured environment approval rules.
+with `gh api --method POST repos/ZER0-Nu1L/ReconfigNet-Sim/pages -f build_type=workflow`.
+The `github-pages` environment must allow deployments from `main`; retain any
+configured environment approval rules.
 No additional deployment token is needed: the workflow uses `GITHUB_TOKEN`
 with `pages: write` and `id-token: write` in the deploy job.
+
+Use HTTPS for the public URL. If the Pages API already reports
+`https_enforced: true`, no extra setting is needed. Otherwise, after the first
+successful deployment, enable it with:
+
+```sh
+gh api --method PUT repos/ZER0-Nu1L/ReconfigNet-Sim/pages -F https_enforced=true
+```
+
+If GitHub reports "The certificate does not exist yet", allow certificate
+provisioning to finish, recheck the Pages API, and retry only if HTTPS is still
+not enforced.
 
 ## Publish an update
 
@@ -100,7 +112,8 @@ clear the user site's domain:
 gh api --method PUT repos/ZER0-Nu1L/ZER0-Nu1L.github.io/pages -F cname=null
 ```
 
-Also inspect the user site's publishing branch for a tracked `CNAME`. If it
+GitHub can remove the tracked `CNAME` during this update. Inspect the user
+site's publishing branch afterward to confirm that it is gone. If it
 still exists, remove that file in a commit so a later publication cannot
 restore the old domain. Keep the existing site content. Do not add a project
 `CNAME` as a workaround. If the old site's source generator lives elsewhere,
