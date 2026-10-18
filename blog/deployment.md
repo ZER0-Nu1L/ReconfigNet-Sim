@@ -68,8 +68,10 @@ gh pr checks --watch
 Review the diff and check results, then merge the specific PR with
 `gh pr merge PR_NUMBER --squash`. The Blog workflow runs checks on relevant
 PRs. After a relevant change reaches `main`, it builds the static site,
-uploads `blog/dist` as the Pages artifact, and deploys it. P4App and Tofino
-workflows also retain their existing triggers.
+uploads `blog/dist` as the Pages artifact, and deploys it. Changes confined to
+`blog/` skip automatic P4App and Tofino runs on both PRs and pushes. Mixed
+changes that include files outside `blog/`, and manual target runs, retain
+the target checks.
 
 Monitor the deployment with:
 
