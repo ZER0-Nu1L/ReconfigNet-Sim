@@ -2,17 +2,33 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: "/blog"
+    groups:
+      blog-toolchain:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: typescript
+        versions: [">=7"]
     schedule:
       interval: monthly
   - package-ecosystem: github-actions
     directory: "/"
+    groups:
+      actions:
+        patterns: ["*"]
     schedule:
       interval: monthly
   - package-ecosystem: gomod
     directory: "/agent/go"
+    groups:
+      go-protocol:
+        patterns: ["*"]
     schedule:
       interval: monthly
   - package-ecosystem: pip
     directory: "/agent/python"
+    # Frozen Python 3.5 manifests live in /agent/python-legacy.
+    groups:
+      modern-python:
+        patterns: ["*"]
     schedule:
       interval: monthly
