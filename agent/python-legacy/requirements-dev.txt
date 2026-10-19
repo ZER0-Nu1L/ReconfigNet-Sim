@@ -1,0 +1,3 @@
+-r requirements-runtime.txt
+grpcio-tools==1.40.0
+pyang==2.6.1

@@ -40,13 +40,16 @@ The Go Agent depends on
 `v0.14.1`, as declared in [`agent/go/go.mod`](agent/go/go.mod). The checked-in
 Python gNMI bindings are generated from the upstream gNMI protocol sources.
 The upstream project is Apache-2.0 licensed; its notices apply to those
-generated bindings and to the dependency obtained during Go builds.
+generated bindings and to the dependency obtained during Go builds. The source
+files and upstream license used for both Python binding sets are retained in
+[`agent/proto/vendor/openconfig-gnmi-v0.14.1/`](agent/proto/vendor/openconfig-gnmi-v0.14.1/),
+with a SHA256 index.
 
 ## Generated code and runtime dependencies
 
 Protocol-buffer files under `agent/go/gen/` and
 `agent/python/ocs_agent/proto/` are generated artifacts. The `.proto` files
-under `agent/proto/` are authored for this project; generated gNMI files retain
+directly under `agent/proto/` are authored for this project; generated gNMI files retain
 the upstream package metadata. Runtime dependencies are installed from their
 respective package registries and are not vendored by this repository; users
 must observe the license terms distributed by those packages.

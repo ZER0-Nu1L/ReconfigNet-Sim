@@ -15,6 +15,7 @@ import http.client
 import json
 import os
 import platform
+import google.protobuf
 import queue
 import sys
 import threading
@@ -473,6 +474,7 @@ def run_suite(grpc_target, http_target, protocols, operations,
         'client_runtime': {
             'python': platform.python_version(),
             'grpcio': getattr(grpc, '__version__', 'unknown'),
+            'protobuf': google.protobuf.__version__,
             'http': 'stdlib-http.client-persistent-http/1.1',
         },
         'grpc_target': grpc_target,

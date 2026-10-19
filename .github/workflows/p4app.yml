@@ -22,6 +22,9 @@ jobs:
   python:
     name: Python and YANG
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.11']
 
     steps:
       - name: Check out repository
@@ -30,7 +33,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: |
             agent/python/requirements-runtime.txt
@@ -42,7 +45,14 @@ jobs:
           python -m pip install -r agent/python/requirements-dev.txt
 
       - name: Run P4App host tests
-        run: make -C targets/p4app test
+        env:
+          OCS_REQUIRE_GRPC_TESTS: '1'
+        run: |
+          python -m pip check
+          python agent/proto/generate_python.py --check
+          make -C targets/p4app test
+          PYTHONPATH="$PWD/agent/python:$PWD/targets/tofino/runtime" \
+            python -m unittest discover -s targets/tofino/runtime/tests -v
 
   go:
     name: Go
@@ -69,7 +79,7 @@ jobs:
 
       - name: Run Go tests
         working-directory: agent/go
-        run: go test ./...
+        run: go test -race ./...
 
   p4app-container:
     name: P4App container
@@ -79,8 +89,27 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Set up modern RPC client
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
       - name: Build and test P4App container
-        run: make -C targets/p4app test-container
+        run: |
+          make -C targets/p4app test-container
+          docker run --rm --entrypoint python3 \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" \
+            reconfig-net/ocs-p4app-agent-test:rc2 \
+            /workspace/agent/proto/generate_python.py --flavor legacy --check
+
+      - name: Exercise old and modern RPC runtimes and downgrade
+        run: |
+          python -m pip install -r agent/python/requirements-dev.txt
+          docker run --rm --entrypoint cat reconfig-net/ocs-p4app-agent:rc2 \
+            /usr/local/bin/ocs-go-agent > "$RUNNER_TEMP/ocs-go-agent"
+          chmod +x "$RUNNER_TEMP/ocs-go-agent"
+          python agent/proto/check_compatibility.py matrix \
+            --go-agent "$RUNNER_TEMP/ocs-go-agent"
 
   whitespace:
     name: Whitespace

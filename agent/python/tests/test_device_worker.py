@@ -18,10 +18,19 @@ try:
         create_device_worker_server,
     )
     from ocs_agent.proto import device_backend_pb2, device_backend_pb2_grpc
-    from tests.test_ocs_agent import FakeSwitch, entry_pair
     GRPC_AVAILABLE = True
 except ImportError:
+    if os.environ.get('OCS_REQUIRE_GRPC_TESTS') == '1':
+        raise
     GRPC_AVAILABLE = False
+
+if GRPC_AVAILABLE:
+    # unittest discovery may run inside targets/p4app, which has its own tests
+    # package. Import the fixture in the same mode as this module.
+    if __package__:
+        from .test_ocs_agent import FakeSwitch, entry_pair
+    else:
+        from test_ocs_agent import FakeSwitch, entry_pair
 
 
 def port_pairs(values):
