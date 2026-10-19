@@ -1,0 +1,7 @@
+.git
+**/node_modules
+**/__pycache__
+**/test-results
+blog/dist
+blog/writing
+artifacts

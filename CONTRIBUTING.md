@@ -42,9 +42,12 @@ optical-hardware validation.
 
 ```bash
 git diff --check
-make -C targets/p4app test
+# Host Python 3.10 or 3.11 in a separate virtual environment:
+python3 -m pip install -r agent/python/requirements-dev.txt
+python3 agent/proto/generate_python.py --check
+OCS_REQUIRE_GRPC_TESTS=1 make -C targets/p4app test
 make -C targets/p4app test-container
-(cd agent/go && go test ./...)
+(cd agent/go && go test -race ./...)
 python3 -m unittest discover -s targets/tofino/ci/tests -v
 python3 targets/tofino/ci/image_lock.py verify
 ```
@@ -57,6 +60,10 @@ repository. It is not an official Intel, P4.org or p4lang image and does not
 provide the hardware BSP, SerDes stack, firmware or drivers needed to validate
 a physical board. See the [Tofino target documentation](targets/tofino/README.md)
 for local compile-only and full-model reproduction commands.
+
+See the [dependency and rollback guide](docs/dependency-upgrade-and-rollback.md)
+for modern/legacy environments, cross-runtime RPC checks and retained-artifact
+downgrade rehearsals.
 
 ## Keeping CI maintainable
 

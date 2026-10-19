@@ -13,6 +13,21 @@ Project motivation and fidelity limits are defined in the repository [README](..
 - GNU Make;
 - the pinned P4App runner under `third_party/p4app`.
 
+## Python environments
+
+Host checks and external clients use Python 3.10 or 3.11 with
+`python3 -m pip install -r agent/python/requirements-dev.txt`. The P4App agent
+and test images retain Python 3.5 and the frozen requirements in
+`agent/python-legacy/`; the Python 3.11 benchmark image uses modern runtime
+requirements. See [binding generation and compatibility checks](../../agent/proto/README.md).
+Install dependencies as a complete environment and keep SDK imports isolated.
+Dockerfiles accept optional `PIP_FIND_LINKS` and `PIP_NO_INDEX` build arguments
+for a separately checksum-verified wheelhouse. The default build uses the
+package registry. Keep wheel archives and their indices in the external
+artifact store; do not commit packages.
+For migration and downgrade procedure, see the
+[dependency upgrade runbook](../../docs/dependency-upgrade-and-rollback.md).
+
 ## Start the default profile
 
 From the repository root:

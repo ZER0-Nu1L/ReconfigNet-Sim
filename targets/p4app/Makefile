@@ -52,7 +52,7 @@ test-container: test-image
 		-v "$(REPOSITORY_DIR):/workspace/ReconfigNet-Sim:ro" \
 		-w /opt/ocs-agent/python \
 		$(TEST_IMAGE) -c \
-		'PYTHONPATH=/opt/ocs-agent/python:/workspace/ReconfigNet-Sim:/workspace/ReconfigNet-Sim/targets/p4app PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s /opt/ocs-agent/python/tests -v'
+		'PYTHONPATH=/opt/ocs-agent/python:/workspace/ReconfigNet-Sim:/workspace/ReconfigNet-Sim/targets/p4app PYTHONDONTWRITEBYTECODE=1 OCS_REQUIRE_GRPC_TESTS=1 python3 -m unittest discover -s /opt/ocs-agent/python/tests -v'
 
 test-models:
 	pyang -p "$(REPOSITORY_DIR)/agent/models" \

@@ -4,9 +4,13 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends iproute2 iputils-ping && \
     rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir \
-      grpcio==1.75.1 \
-      protobuf==3.20.3
+# Optional verified wheelhouse, useful for repeatable offline rehearsals.
+ARG PIP_FIND_LINKS
+ARG PIP_NO_INDEX
+
+COPY agent/python/requirements-runtime.txt /tmp/requirements-runtime.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-runtime.txt && \
+    rm /tmp/requirements-runtime.txt
 
 WORKDIR /work
 ENTRYPOINT ["python3", "benchmarks/protocol_latency.py"]

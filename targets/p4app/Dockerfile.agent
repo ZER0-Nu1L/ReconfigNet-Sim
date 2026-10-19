@@ -15,7 +15,11 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
 
 FROM p4lang/p4app:rc-2.0.0
 
-COPY agent/python/requirements-runtime.txt /tmp/requirements-runtime.txt
+# Optional verified wheelhouse, useful for repeatable offline rehearsals.
+ARG PIP_FIND_LINKS
+ARG PIP_NO_INDEX
+
+COPY agent/python-legacy/requirements-runtime.txt /tmp/requirements-runtime.txt
 RUN pip3 install --no-cache-dir --upgrade pip==20.3.4 && \
     PYTHONPATH=/usr/local/lib/python3.5/dist-packages \
       python3 -S -m pip install --no-cache-dir \

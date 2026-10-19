@@ -1,0 +1,5 @@
+# Frozen Python 3.5 P4App/SDK environment; intentionally outside Dependabot's
+# modern /agent/python directory. Upgrade only with target compatibility tests.
+grpcio==1.40.0
+protobuf==3.17.3
+PyYAML==5.3.1
