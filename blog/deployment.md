@@ -89,6 +89,22 @@ gh workflow run blog.yml --ref main
 Manual runs on other branches perform checks only; the deploy job requires
 `refs/heads/main`.
 
+## Google Search Console
+
+Use a URL-prefix property for `https://zer0-nu1l.github.io/ReconfigNet-Sim/`.
+The HTML-file ownership check uses `public/google2939badf67338db7.html`;
+Astro copies it unchanged to the output root, so the deployed URL is
+<https://zer0-nu1l.github.io/ReconfigNet-Sim/google2939badf67338db7.html>.
+Keep this file in future deployments, including after ownership is verified.
+
+After deployment, confirm that the URL returns HTTP 200 with the exact
+verification text and no redirect, then click **Verify** in Search Console.
+The repository deploys the file; it does not complete the Google-account step.
+Once verified, submit
+<https://zer0-nu1l.github.io/ReconfigNet-Sim/sitemap-index.xml>
+under **Sitemaps**, then use **URL inspection** to request indexing for the
+English and Chinese article URLs. Google decides whether and when to index them.
+
 ## Diagnose redirects to an old domain
 
 A custom domain on the user-site repository can redirect every project site
