@@ -3,6 +3,8 @@ title: "文章标题"
 description: "一句话说明文章的问题与主要结论。"
 author: 吴昌博
 date: "2026-10-18"
+# 正文实质更新后填写；不能早于发布日期。
+# updated: "2026-10-21"
 draft: true
 ---
 

@@ -2,6 +2,40 @@ import { expect, test } from '@playwright/test';
 
 const base = '/ReconfigNet-Sim';
 
+test('OCS citations are localized, share English BibTeX and remain readable in both themes and print', async ({ page }) => {
+  let englishBibtex = '';
+  for (const lang of ['en', 'zh']) {
+    await page.goto(`${base}/${lang}/posts/ocs-control-arch/`);
+    const citation = page.locator('.article-citation');
+    await expect(citation.getByRole('heading', { name: lang === 'en' ? 'Citing Us' : '引用本文' })).toBeVisible();
+    await expect(citation.getByRole('link', { name: 'wuchangbo@sii.edu.cn' })).toHaveAttribute('href', 'mailto:wuchangbo@sii.edu.cn');
+    const bibtex = await citation.locator('code').innerText();
+    if (lang === 'en') englishBibtex = bibtex;
+    expect(bibtex).toBe(englishBibtex);
+    expect(bibtex).toContain('author = {Wu, Changbo and Yu, Zhuolong}');
+    expect(bibtex).toContain(`${base}/en/posts/ocs-control-arch/`);
+    const outline = page.locator('[data-outline]');
+    if (page.viewportSize()!.width < 1280) await outline.locator('.outline-panel > summary').click();
+    await outline.locator('a[href="#citing-us"]').click();
+    await expect(page).toHaveURL(/#citing-us$/);
+    await expect(citation.getByRole('heading')).toBeInViewport();
+    const backgrounds = [];
+    for (const theme of ['light', 'dark']) {
+      if (await page.locator('html').getAttribute('data-theme') !== theme) await page.locator('[data-theme-toggle]').click();
+      backgrounds.push(await citation.locator('pre').evaluate(element => getComputedStyle(element).backgroundColor));
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expect(citation.locator('pre')).toHaveCSS('overflow-x', 'auto');
+    }
+    expect(backgrounds[0]).not.toBe(backgrounds[1]);
+    await page.emulateMedia({ media: 'print' });
+    await expect(citation).toBeVisible();
+    await expect(page.locator('.article-footer')).toBeHidden();
+    await page.emulateMedia({ media: 'screen' });
+  }
+  await page.goto(`${base}/en/posts/hello-optical-world/`);
+  await expect(page.locator('.article-citation')).toHaveCount(0);
+});
+
 test('English entry and article-to-article language switching', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -66,11 +100,18 @@ test('RSS, sitemap, 404 and keyboard entry work', async ({ page, request }) => {
 test('articles show localized authors, publication dates and the repository Star link', async ({ page }) => {
   for (const [lang, author, date] of [['en', 'Changbo Wu', 'September 15, 2026'], ['zh', '吴昌博', '2026年9月15日']]) {
     await page.goto(`${base}/${lang}/posts/hello-optical-world/`);
-    await expect(page.locator('.article-meta p')).toHaveText([`By: ${author}`, `Date: ${date}`]);
+    await expect(page.locator('.article-meta p')).toHaveText([`${lang === 'zh' ? '作者：' : 'By: '}${author}`, `${lang === 'zh' ? '发布于' : 'Published'} ${date}`]);
+    await expect(page.locator('meta[property="article:modified_time"]')).toHaveCount(0);
     await expect(page.locator('.article-meta time')).toHaveAttribute('datetime', '2026-09-15');
     await expect(page.locator('.article-footer')).toContainText('Enjoy the blog?');
     await expect(page.getByRole('link', { name: 'Give ReconfigNet-Sim a star' })).toHaveAttribute('href', 'https://github.com/ZER0-Nu1L/ReconfigNet-Sim');
     await expect(page.locator('.github-stars img')).toHaveAttribute('src', 'https://img.shields.io/github/stars/ZER0-Nu1L/ReconfigNet-Sim?style=social');
+    await page.goto(`${base}/${lang}/posts/ocs-control-arch/`);
+    await expect(page.locator('.article-meta p').first()).toHaveText(lang === 'zh' ? '作者：吴昌博、余卓隆' : 'By: Changbo Wu, Zhuolong Yu');
+    await expect(page.locator('.article-dates')).toHaveText(lang === 'zh'
+      ? '发布于 2026年10月19日 · 更新于 2026年10月22日'
+      : 'Published October 19, 2026 · Updated October 22, 2026');
+    await expect(page.locator('meta[property="article:modified_time"]')).toHaveAttribute('content', '2026-10-22T00:00:00Z');
   }
 });
 
@@ -141,6 +182,55 @@ test('desktop outline and its resize divider stop before the site footer', async
     const divider = (await handle.boundingBox())!;
     expect(divider.y + divider.height).toBeLessThanOrEqual(footer.y);
   }
+});
+
+test('OCS hero follows system changes and the theme button without changing layout', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto(`${base}/en/posts/ocs-control-arch/`);
+  const hero = page.locator('.article-hero');
+  const light = hero.locator('.hero-light');
+  const dark = hero.locator('.hero-dark');
+  await expect(light).toBeVisible();
+  await expect(dark).toBeHidden();
+  await expect(light).toHaveAttribute('src', `${base}/images/ocs-control-arch/hero-light.webp`);
+  await expect(dark).toHaveAttribute('src', `${base}/images/ocs-control-arch/hero-dark.webp`);
+  for (const image of [light, dark]) {
+    await expect.poll(() => image.evaluate(element => {
+      const img = element as HTMLImageElement;
+      return img.complete && img.naturalWidth === 1536 && img.naturalHeight === 640;
+    })).toBe(true);
+  }
+  const initial = (await hero.boundingBox())!;
+  expect(initial.width / initial.height).toBeCloseTo(2.4, 1);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(dark).toBeVisible();
+  await expect(light).toBeHidden();
+  // Exercise the actual navigation button in both directions, then persist D.
+  for (const theme of ['light', 'dark', 'light', 'dark']) {
+    await page.locator('button.theme-toggle').click();
+    await expect(hero.locator(`.hero-${theme}`)).toBeVisible();
+    await expect(hero.locator(`.hero-${theme === 'light' ? 'dark' : 'light'}`)).toBeHidden();
+    expect((await hero.boundingBox())!.height).toBeCloseTo(initial.height, 1);
+  }
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.reload();
+  await expect(dark).toBeVisible();
+  await page.locator('[data-language-switch]').click();
+  await expect(page).toHaveURL(/\/zh\/posts\/ocs-control-arch\/$/);
+  await expect(dark).toBeVisible();
+  await expect(dark).toHaveAttribute('alt', '光交换及其周围控制层的概念插画。');
+  await page.locator('button.theme-toggle').click();
+  await expect(light).toBeVisible();
+  await expect(dark).toBeHidden();
+  await page.locator('button.theme-toggle').click();
+  await page.emulateMedia({ media: 'print' });
+  await expect(light).toBeVisible();
+  await expect(dark).toBeHidden();
+  await page.emulateMedia({ media: 'screen' });
+  await expect(dark).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.goto(`${base}/en/posts/hello-optical-world/`);
+  await expect(page.locator('.article-hero')).toHaveCount(0);
 });
 
 test('theme follows the system until a manual choice, then persists across pages and languages', async ({ page }) => {
@@ -232,12 +322,16 @@ test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false });
   test('system dark theme and branding work without an unusable toggle', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
-    await page.goto(`${base}/zh/posts/hello-optical-world/`);
+    await page.goto(`${base}/zh/posts/ocs-control-arch/`);
     await expect(page.locator('[data-theme-toggle]')).toBeHidden();
     await expect(page.locator('.mark-dark')).toBeVisible();
+    await expect(page.locator('.article-hero .hero-dark')).toBeVisible();
+    await expect(page.locator('.article-hero .hero-light')).toBeHidden();
     await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(21, 27, 37)');
     await page.emulateMedia({ colorScheme: 'light' });
     await expect(page.locator('.mark-light')).toBeVisible();
+    await expect(page.locator('.article-hero .hero-light')).toBeVisible();
+    await expect(page.locator('.article-hero .hero-dark')).toBeHidden();
     await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(252, 252, 250)');
   });
 });
@@ -248,13 +342,15 @@ test('current architecture articles render formulas, figures and nested outlines
   for (const lang of ['en', 'zh']) {
     await page.goto(`${base}/${lang}/posts/ocs-control-arch/`);
     await expect(page.locator('h1')).toBeVisible();
-    // The English article uses TeX; the Chinese article uses plain text math.
-    if (lang === 'en') expect(await page.locator('.katex').count()).toBeGreaterThan(10);
+    // Both translations retain the typeset photonics-language name.
+    await expect(page.locator('.katex').first()).toContainText('λ');
     await expect(page.locator('.katex-error')).toHaveCount(0);
     await expect(page.locator('.tldr')).toBeVisible();
-    expect(await page.locator('figure figcaption').count()).toBeGreaterThanOrEqual(8);
+    await expect(page.locator('figure figcaption')).toHaveCount(9);
+    expect(await page.locator('figure[id^="figure-"]').evaluateAll(figures => figures.map(figure => figure.id))).toEqual(
+      Array.from({ length: 9 }, (_, i) => `figure-${i + 1}`));
     const images = page.locator('.prose img');
-    expect(await images.count()).toBeGreaterThanOrEqual(8);
+    await expect(images).toHaveCount(9);
     for (const image of await images.all()) {
       const src = (await image.getAttribute('src'))!;
       expect((await request.get(src)).ok(), src).toBe(true);

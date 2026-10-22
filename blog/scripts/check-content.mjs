@@ -5,6 +5,12 @@ import matter from 'gray-matter';
 
 const reviewMarkup = /\{(?:>>|\+\+|--|~~|==)|\{#[cs]\d+\}|^\s*(?:comments|suggestions):\s*$/m;
 
+function validDate(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(value))
+    && new Date(value).toISOString().slice(0, 10) === value;
+}
+
 export function validatePosts(posts) {
   const errors = [];
   const published = posts.filter(({ data }) => data.draft === false);
@@ -15,9 +21,18 @@ export function validatePosts(posts) {
       if (typeof data[key] !== 'string' || !data[key].trim()) errors.push(`${id}: ${key} is required`);
     }
     if (typeof data.draft !== 'boolean') errors.push(`${id}: draft must be explicitly true or false`);
-    if (typeof data.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(data.date)
-      || !Number.isFinite(Date.parse(data.date))
-      || new Date(data.date).toISOString().slice(0, 10) !== data.date) errors.push(`${id}: use a quoted valid YYYY-MM-DD date`);
+    if (data.citation !== undefined && typeof data.citation !== 'boolean') errors.push(`${id}: citation must be true or false`);
+    if (data.citation === true) {
+      const english = posts.find(entry => entry.id === `en/${id.split('/')[1]}`);
+      if (!english || (data.draft === false && english.data.draft !== false)) {
+        errors.push(`${id}: citation requires a corresponding English article (published for published posts)`);
+      }
+    }
+    if (!validDate(data.date)) errors.push(`${id}: use a quoted valid YYYY-MM-DD date`);
+    if (data.updated !== undefined) {
+      if (!validDate(data.updated)) errors.push(`${id}: updated must be a quoted valid YYYY-MM-DD date`);
+      else if (validDate(data.date) && data.updated < data.date) errors.push(`${id}: updated must not precede publication date`);
+    }
   }
   for (const post of published) {
     const [lang, slug] = post.id.split('/');

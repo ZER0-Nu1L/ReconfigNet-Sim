@@ -1,0 +1,22 @@
+---
+import { Code } from 'astro:components';
+import type { Language } from '../lib/site';
+
+interface Props {
+  lang: Language;
+  headingId: string;
+  title: string;
+  bibtex: string;
+}
+const { lang, headingId, title, bibtex } = Astro.props;
+---
+<section class="article-citation" aria-labelledby={headingId}>
+  <h2 id={headingId}><a href={`#${headingId}`}>{title}</a></h2>
+  <p>
+    {lang === 'zh'
+      ? '如果本文对你有所帮助，欢迎引用。讨论交流请联系 '
+      : 'Please cite this blog post if you found it helpful. For discussion, contact '}
+    <a href="mailto:wuchangbo@sii.edu.cn">wuchangbo@sii.edu.cn</a>
+  </p>
+  <Code code={bibtex} lang="bibtex" themes={{ light: 'github-light', dark: 'github-dark' }} defaultColor={false} />
+</section>
