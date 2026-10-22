@@ -2,6 +2,9 @@
 import { getCollection, render } from 'astro:content';
 import Site from '../../../layouts/Site.astro';
 import Outline from '../../../components/Outline.astro';
+import Citation from '../../../components/Citation.astro';
+import ArticleHero from '../../../components/ArticleHero.astro';
+import { formatCitation } from '../../../lib/citation.mjs';
 import { postSlug, otherLanguage, formatDate, href, repository, text, type Language } from '../../../lib/site';
 export async function getStaticPaths() {
   const posts = await getCollection('posts', ({ data }) => import.meta.env.DEV || !data.draft);
@@ -12,11 +15,27 @@ export async function getStaticPaths() {
 const { post } = Astro.props;
 const lang = post.id.split('/')[0] as Language;
 const route = `posts/${postSlug(post.id)}/`;
-const counterpart = (await getCollection('posts')).find(entry => entry.id === `${otherLanguage(lang)}/${postSlug(post.id)}`);
+const updated = post.data.updated && post.data.updated > post.data.date ? post.data.updated : undefined;
+const posts = await getCollection('posts');
+const counterpart = posts.find(entry => entry.id === `${otherLanguage(lang)}/${postSlug(post.id)}`);
 const languageRoute = counterpart && (import.meta.env.DEV || !counterpart.data.draft) ? route : '';
-const { Content, headings } = await render(post);
+const { Content, headings: renderedHeadings } = await render(post);
+const headings = [...renderedHeadings];
+const citationTitle = lang === 'zh' ? '引用本文' : 'Citing Us';
+let citationHeadingId = 'citing-us';
+while (headings.some(({ slug }) => slug === citationHeadingId)) citationHeadingId += '-citation';
+let bibtex = '';
+if (post.data.citation) {
+  const english = posts.find(entry => entry.id === `en/${postSlug(post.id)}`);
+  if (!english || (!post.data.draft && english.data.draft)) {
+    throw new Error(`${post.id}: citation requires a corresponding English article (published for published posts)`);
+  }
+  const url = new URL(href(`en/${route}`), Astro.site).href;
+  bibtex = formatCitation(english.data, postSlug(post.id), url);
+  headings.push({ depth: 2, slug: citationHeadingId, text: citationTitle });
+}
 ---
-<Site lang={lang} title={post.data.title} description={post.data.description} route={route} languageRoute={languageRoute} article date={post.data.date} noindex={post.data.draft}>
+<Site lang={lang} title={post.data.title} description={post.data.description} route={route} languageRoute={languageRoute} article date={post.data.date} updated={updated} noindex={post.data.draft}>
   <article class:list={['article', { 'article-with-outline': headings.some(({ depth }) => depth >= 2) }]}>
     <Outline headings={headings} lang={lang} />
     <header class="article-header">
@@ -24,12 +43,22 @@ const { Content, headings } = await render(post);
       {post.data.draft && <p class="eyebrow">{lang === 'zh' ? '草稿 · 仅本地开发预览' : 'Draft · Local development preview'}</p>}
       <h1>{post.data.title}</h1>
       <div class="article-meta">
-        <p>By: <span>{post.data.author}</span></p>
-        <p>Date: <time datetime={post.data.date}>{formatDate(post.data.date, lang)}</time></p>
+        <p>{lang === 'zh' ? '作者：' : 'By: '}<span>{post.data.author}</span></p>
+        <p class="article-dates">
+          <span>{lang === 'zh' ? '发布于' : 'Published'} <time datetime={post.data.date}>{formatDate(post.data.date, lang)}</time></span>
+          {updated && <>
+            <span aria-hidden="true"> · </span>
+            <span>{lang === 'zh' ? '更新于' : 'Updated'} <time datetime={updated}>{formatDate(updated, lang)}</time></span>
+          </>}
+        </p>
       </div>
       <p class="lede">{post.data.description}</p>
+      {post.data.hero && <ArticleHero {...post.data.hero} />}
     </header>
-    <div class="prose"><Content /></div>
+    <div class="prose">
+      <Content />
+      {bibtex && <Citation lang={lang} headingId={citationHeadingId} title={citationTitle} bibtex={bibtex} />}
+    </div>
     <footer class="article-footer">
       <p>
         <span>Enjoy the blog? Give ReconfigNet-Sim a star</span>

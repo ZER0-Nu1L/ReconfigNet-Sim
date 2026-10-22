@@ -1,0 +1,16 @@
+---
+import { href } from '../lib/site';
+
+interface Props {
+  light: string;
+  dark?: string;
+  alt: string;
+  width: number;
+  height: number;
+}
+const { light, dark, alt, width, height } = Astro.props;
+---
+<figure class:list={['article-hero', { 'article-hero-themed': !!dark }]}>
+  <img class="hero-light" src={href(light)} alt={alt} width={width} height={height} fetchpriority="high" decoding="sync" />
+  {dark && <img class="hero-dark" src={href(dark)} alt={alt} width={width} height={height} fetchpriority="high" decoding="sync" />}
+</figure>

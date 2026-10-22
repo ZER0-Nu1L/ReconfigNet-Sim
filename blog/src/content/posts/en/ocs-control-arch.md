@@ -3,333 +3,320 @@ title: "Microsecond Optical Switching. Millisecond Reality."
 description: "Budgeting OCS Control Latency, from SDN Orchestration to Device Execution"
 author: "Changbo Wu, Zhuolong Yu"
 date: "2026-10-19"
+updated: "2026-10-22"
 draft: false
+citation: true
+hero:
+  light: images/ocs-control-arch/hero-light.webp
+  dark: images/ocs-control-arch/hero-dark.webp
+  alt: "Conceptual illustration of optical switching and its surrounding control layers."
 ---
 
-Optical Circuit Switches (OCSs) are crossing the threshold into sub-millisecond reconfiguration. In March 2025, on the eve of OFC, iPronics [unveiled ONE-32](https://ipronics.com/ipronics-unveils-worlds-first-silicon-photonics-optical-circuit-switch-for-ai-driven-data-centers-optical-network-transformation/), dubbing it "the world's first silicon photonics OCS" and promising **fast reconfiguration times under 300 microseconds**. Microsecond switching has thus emerged as a key selling point for data center products; in September 2026, the company [announced a $125 million Series B round](https://ipronics.com/ipronics-raises-125-million-to-scale-programmable-optical-networking-for-ai-data-centers/) with NVIDIA participation.
+Optical circuit switches (OCSs) are moving into sub-millisecond reconfiguration. In March 2025, ahead of OFC, iPronics [unveiled ONE-32](https://ipronics.com/ipronics-unveils-worlds-first-silicon-photonics-optical-circuit-switch-for-ai-driven-data-centers-optical-network-transformation/), calling it “the world's first silicon photonics OCS” and promising **reconfiguration in under 300 μs**. Microsecond switching has become a selling point for data center products. In September 2026, iPronics [announced a $125 million Series B round](https://ipronics.com/ipronics-raises-125-million-to-scale-programmable-optical-networking-for-ai-data-centers/) with NVIDIA participation to support commercial deployment of its optical networking technology for AI data centers.
 
-**Faster switching means optical networking can empower many more applications.** In their OCP presentation on [Fast Switching OCS](https://drive.google.com/file/d/1G0o39qR0wZvvHHfMTyiAe2mB6j5HxelF/view), James Burch (Lumotive) and Vivek Sarathy (iPronics) captured this transformation with the phrase "Faster Switching Expands its Use Cases": as reconfiguration enters the sub-millisecond domain, optical connections can adapt more frequently to dynamic traffic demands and AI communication phases—serving dynamic traffic grooming, inter-phase topology adaptation, and finer-grained circuit scheduling. The essence of speed lies in unlocking use cases previously constrained by reconfiguration delays.
+**Faster switching opens up more applications for optical networking.** At the 2026 OCP Global Summit, James Burch of Lumotive and Vivek Sarathy of iPronics summarized this shift as “Faster Switching Expands its Use Cases” in [Fast switching OCS for AI and Hyperscale Data Centers: Benefits, Technologies and Emerging Applications](https://drive.google.com/file/d/1G0o39qR0wZvvHHfMTyiAe2mB6j5HxelF/view). As reconfiguration enters the sub-millisecond range, optical connections can follow traffic demand and AI communication phases more frequently, supporting dynamic traffic grooming, topology changes between phases, and finer-grained circuit scheduling. Speed makes uses previously limited by reconfiguration delays worth exploring.
 
-Meanwhile, **adapting existing packet-switched SDN orchestration patterns and control architectures has become a prominent integration direction in industry.** In their OCP talk on [interoperable multi-vendor OCS use cases](https://drive.google.com/file/d/1ahYwnygxq6vzFGNZWNrXO7r9fLLhCvg7/view), Iwan Kartawira (iPronics, [co-lead of the OCP OCS sub-project](https://www.opencompute.org/community/optical-circuit-switching)) and Kazuaki Ueda (KDDI) explicitly proposed "CPO + OCS + SDN," placing workload optimization within a collaborative SDN and OCS framework. In this multi-vendor control path, a gNMI client talks to the device's gNMI service and generic YANG datastore before calling vendor APIs. Unified data models, controllers, and legacy management protocols form the backbone of this integration roadmap.
+Meanwhile, **unified models, interfaces, and multi-vendor orchestration within existing SDN systems have become a major focus of OCS integration.** This approach reuses mature network management capabilities. When reconfiguration must keep up with application communication phases, it also requires revisiting the timing assumptions of existing control workflows. In [Optically-Accelerated AI Clusters Enabled by Interoperable Multi-Vendor OCSs: Use Cases and Opportunities](https://drive.google.com/file/d/1ahYwnygxq6vzFGNZWNrXO7r9fLLhCvg7/view), Iwan Kartawira of iPronics ([a co-lead of the OCP OCS sub-project](https://www.opencompute.org/community/optical-circuit-switching)) and Kazuaki Ueda of KDDI explicitly propose “CPO + OCS + SDN,” placing workload optimization within a joint SDN and OCS architecture. Their multi-vendor control path runs from a gNMI client to a gNMI service and generic YANG datastore, then to vendor APIs. Unified models, controllers, and established management protocols form the backbone of this integration approach.
 
-However, when an OCS reconfigures frequently across communication phases, **carrying over the full SDN configuration workflow designed for electrical packet switches risks making the control path the primary bottleneck in reconfiguration speed.** In an implementation where every reconfiguration is mediated by a centralized controller, an application first requests the controller, which arbitrates resources and invokes the device agent (OCS Agent); the device software in turn interacts with local services and SDKs to execute the operation. While centralized governance and vendor abstraction each provide clear value, every hop introduces additional communication, validation, scheduling, and queuing.
+![OCP–IOWN multi-vendor OCS interoperability demo, from vendor-specific converters to a generic OCP-OCS YANG model](/ReconfigNet-Sim/images/ocs-control-arch/ocp-multivendor-interop.png)
 
-Against the historical transition from millisecond-scale 3D MEMS to sub-millisecond silicon photonics, consider the following calculation: **Suppose OCS physical reconfiguration drops from 20 ms to 200 μs, but serial control latency remains 5 ms; full reconfiguration latency only drops from 25 ms to 5.2 ms. While the physical device is 100× faster, end-to-end reconfiguration is only ~4.8× faster.** When the control architecture remains organized around slow configuration cycles while execution must keep pace with communication scheduling, the legacy control path swallows most of the gains from hardware advances: **the device has entered the microsecond regime, but complete reconfiguration remains trapped in milliseconds.**
+_Figure 1: A unified control approach for multi-vendor OCSs. Left: NETCONF, a YANG datastore, and vendor-specific converters connect to devices. Right: a gNMI service and generic OCP-OCS YANG datastore connect to vendor APIs, simplifying multi-vendor integration. Original slide from Iwan Kartawira and Kazuaki Ueda's [Optically-Accelerated AI Clusters Enabled by Interoperable Multi-Vendor OCSs: Use Cases and Opportunities](https://drive.google.com/file/d/1ahYwnygxq6vzFGNZWNrXO7r9fLLhCvg7/view), slide 11, “OCP-IOWN Global Forum Interop Demo.” The original attribution and literature credit are retained._
 
-![Physical switching speeds up 100 times, while full reconfiguration speeds up about 4.8 times](/ReconfigNet-Sim/images/ocs-control-arch/en/time-budget.svg)
+When an OCS reconfigures frequently across communication phases, however, **carrying over the full SDN control workflow used for electrical packet networks can make the control path the main limit on reconfiguration speed.** In an implementation with controller coordination on every request, the application first contacts the controller, which coordinates resources and calls the device agent (OCS Agent). The device may then invoke local services and SDKs. Global management and vendor adaptation each serve a purpose, but every hop adds communication, validation, scheduling, and queuing.
 
-*Figure 1: Identical millisecond scales compare physical and full reconfiguration. This hypothetical example reduces physical reconfiguration from 20 ms to 0.2 ms while keeping serial control at 5 ms, raising control's share of total waiting time from 20% to ~96%. This is an explicit hypothetical calculation; endpoint recovery is excluded.*
+Against the transition from millisecond-scale 3D MEMS to sub-millisecond silicon photonics, consider this calculation: **if physical OCS reconfiguration falls from 20 ms to 200 μs while serial control still takes 5 ms, full reconfiguration falls from 25 ms to 5.2 ms. The physical device becomes 100× faster; the full operation becomes only about 4.8× faster.** A control architecture organized around slower configuration cycles can consume most of the gains from faster devices when execution must keep up with communication scheduling: **the device has reached microseconds, while full reconfiguration remains in milliseconds.**
 
-The gap illustrated above **stems from a fundamental mismatch between the control architecture and how fast-reconfiguring switches are utilized.** In typical SDN-controlled electrical packet networks, a centralized controller manages global resource arbitration and rule configuration, while switch hardware continuously forwards packets. This architecture balances centralized management with line-rate forwarding: a single configuration update amortizes its control overhead across massive subsequent traffic flows, making the system relatively insensitive to individual configuration latencies.
+![Physical reconfiguration becomes 100 times faster, while full reconfiguration becomes only about 4.8 times faster](/ReconfigNet-Sim/images/ocs-control-arch/en/time-budget.svg)
 
-In contrast, for applications that reconfigure an OCS across distinct communication phases, establishing the connection directly dictates when the next phase can transmit data. Forcing every reconfiguration through full remote coordination and device provisioning means the previously amortized control cost becomes an unavoidable delay paid before every communication round. **Directly inheriting this workflow creates a severe timescale mismatch between the control architecture and fast OCS switching.** Returning to the example: physical actuation is compressed to 200 μs, but the 5 ms control path remains untouched, inverting the cost structure entirely—the bulk of the waiting time is no longer the physical device action, but the control software stack itself.
+_Figure 2: Physical and full reconfiguration are compared on identical millisecond scales. Physical reconfiguration falls from 20 ms to 0.2 ms while serial control stays at 5 ms, raising control's share of total waiting time from 20% to about 96%. This is a calculation under explicit assumptions; endpoint recovery is excluded._
 
-While the OCP community advances unified data models, multi-vendor interoperability, and end-to-end metrics, this article asks: **when configuration becomes an in-path step in every communication round, is the existing control architecture still appropriate?**
+This gap **comes from a mismatch between the control architecture and the way fast reconfiguration is used.** In a typical SDN packet network, the centralized controller coordinates global resources and configures rules, while switch hardware forwards traffic continuously. This division supports centralized management and fast forwarding: one configuration serves substantial subsequent traffic, so its control cost can be amortized. Individual configuration latency is often less critical.
+
+For applications that reconfigure OCSs with each communication phase, connection setup directly determines when the next phase can transmit. If every reconfiguration follows the full remote coordination and device configuration workflow, the control cost becomes a delay paid before every communication round. **Reusing this workflow creates a serious mismatch in timescales for fast OCS switching.** In our example, physical reconfiguration has shrunk to 200 μs while the control path still takes 5 ms. Control software now accounts for most of the wait.
+
+The OCP community is advancing unified models, multi-vendor interoperability, and end-to-end metrics. This article asks: **when configuration becomes a required step in every communication round, is the existing control architecture still suitable, and how should responsibilities and execution paths change?**
 
 > [!TLDR]
 >
-> - **Budget the full end-to-end path.** Beyond physical switching, request processing, software handoffs, and low-level API invocations govern when a link becomes usable. If physical reconfiguration drops from 20 ms to 200 μs, a 5 ms serial control path keeps total reconfiguration at millisecond scales.
-> - **Evaluate three decoupled dimensions.** How the controller participates, what interface and protocol are used, and how the device executes can each be chosen independently, guided by application workload requirements and latency budgets.
-> - **Verify latency budgets on Tofino.** Measurements show that streamlining upper software layers reduces full API latency from ~6.59 ms to 4.39 ms, with vendor runtime calls dominating the remaining time; controller-bypass benefits and photonic parallel convergence remain to be measured.
-> - **Recognize software limits.** Pushing protocol and process optimizations to the limit on general-purpose CPUs with management-protocol stacks yields a software latency floor of ~20 μs (p99); faster paths demand driver-level or FPGA-based designs.
+> - **Budget the full path.** If physical reconfiguration falls from 20 ms to 200 μs, 5 ms of serial control still keeps full reconfiguration in milliseconds. Request processing, software handoffs, and device calls all belong in the budget.
+>
+> - **Assign control responsibilities to fit the budget.** Controller participation, the control interface and protocol, and device execution are three design dimensions that can be chosen separately.
+>
+> - **Reshape the control path to bring waiting time into the hundreds of microseconds.** On Intel Tofino, we implemented a lightweight interface, in-process adaptation, and combined low-level submissions. The client accessed the device from a separate host throughout; mean API latency fell from 3777 to 820 μs, a reduction of about 78% and a speedup of about 4.6×. The largest remaining interval lies in the device API path, which includes the vendor runtime. Further optimization needs device vendors and system integrators to work together.
+>
+> - **Industry should make control design keep pace with application budgets.** Assign responsibilities by use case, reduce software processing and handoffs, and include device APIs, vendor runtimes, and completion notifications in the design. Realizing device speed requires the whole control path to improve.
 
-## A Single Reconfiguration: From Planning Decisions to Device Execution
-Integrating an OCS into a network begins with deciding which ports to connect, when to change topology, and how to synchronize with application communication phases; the system must then pass these decisions to the device to execute the physical reconfiguration. The former belongs to topology planning and scheduling; the latter belongs to triggering and execution. **Planning can be performed ahead of time, while execution is triggered on demand.** When requirements are predictable, connections can be computed in advance; when requests arrive dynamically, decisions must be made online. Our focus here is: once a target is established, how long is the execution path before the application can actually transmit over it?
+## A Single Reconfiguration: From Planning to Device Execution
 
-Execution typically starts with a connection request: after necessary coordination, the request reaches the device control service; device software validates the target and permissions, invokes the SDK or low-level API, and converts port mappings into executable physical actuator states. Implementations vary across OCS hardware:
+Integrating an OCS into a network starts with deciding which ports to connect, when to change connections, and how to align those changes with application communication phases. The system must then deliver the decision to the device and execute it. These are topology planning and scheduling, followed by triggering and execution. **Planning can happen ahead of time; execution is triggered when needed.** Predictable targets can be computed in advance, while targets determined by incoming demand require online decisions. Our focus is what happens after the target is known: how much execution remains before the application can use it?
 
-> - Google's [Mission Apollo](https://arxiv.org/abs/2208.10041) describes a concrete MEMS example: the CPU receives port connection commands, sets mirror voltages via an FPGA and high-voltage driver boards, and uses camera feedback to adjust mirrors until optical paths stabilize.
-> - For programmable silicon photonics meshes, the target must also be mapped to internal waveguides and programmable cell states; [λλ](https://dl.acm.org/doi/10.1145/3789240.3829151) translates high-level programs into graph representations and solves for optimal mappings onto photonic hardware.
-> Both examples translate high-level connection intent into physical device actions, differing only in the intermediate transformations required.
+Execution usually begins with a connection request. After any necessary coordination, it reaches the device control service. Device software checks the target and permissions, calls the SDK or low-level API, and translates the port connections into executable device states. OCS implementations differ here.
 
-When reporting results according to API contracts, systems must distinguish between **request received, programming completed, optical path settled, and application ready**. Figure 2 illustrates these responsibilities and dependencies.
+> - Google's [Mission Apollo](https://arxiv.org/abs/2208.10041) provides a concrete MEMS example: a CPU receives port connection commands, sets micromirror voltages through an FPGA and high-voltage driver boards, and uses camera feedback to adjust the mirrors until the optical path reaches the required state.
+>
+> - In a programmable silicon photonics mesh, the target must also be mapped to internal paths and programmable cell states. [$\lambda_{\lambda}$](https://dl.acm.org/doi/10.1145/3789240.3829151) translates high-level programs into a graph representation, then solves the mapping onto target photonic hardware.
 
-![Planning and scheduling feed a trigger and execution path, expanded into five responsibilities](/ReconfigNet-Sim/images/ocs-control-arch/en/control-framework.svg)
+Interpreting a device's result requires distinguishing four milestones: **request received, programming completed, optical path settled, and application ready**. The figure below shows the responsibilities and their dependencies.
 
-*Figure 2: Planning/scheduling and trigger/execution are separate responsibilities. The expanded view shows request submission, device service, low-level API, actuation and path readiness. A reply reports the state defined by the API contract.*
+![A common framework from planning and scheduling to device execution and path readiness](/ReconfigNet-Sim/images/ocs-control-arch/en/control-framework.svg)
 
-## The Time Budget: Beyond the Device, How Long Must We Wait?
-With this framework in place, the initial 5 ms budget can be broken down. Consider a serial scenario: once an application determines its target, it issues a request, the device performs the reconfiguration, and endpoints wait until the path is fully ready before starting the next communication round. Decomposing these non-overlapping intervals along the timeline:
+_Figure 3: Planning/scheduling and triggering/execution are distinguished first, then execution is expanded. Return arrows report results according to the interface contract._
+
+## The Time Budget: How Much Waiting Remains Beyond the Device?
+
+This framework lets us break down the 5 ms control cost in the opening example. Consider a serial case: the application knows its target and sends a request, the device reconfigures, and the endpoints wait for the path before starting the next communication round. The non-overlapping work intervals are:
 
 ```text
 T_ready = T_request + T_service + T_apply + T_settle + T_endpoint
 ```
 
-- `T_request`: Request preparation, outbound network transit, and mandatory controller processing.
-- `T_service`: Device service reception, validation, queuing, and internal software handoffs.
-- `T_apply`: Translating target mappings into device commands and invoking low-level APIs.
-- `T_settle`: Physical settling time required after API invocation completes.
-- `T_endpoint`: Endpoint recovery procedures and completion notifications required by the application.
+- `T_request`: Request preparation, outbound communication, and any required controller processing.
+- `T_service`: Device service reception, validation, queuing, and internal handoffs.
+- `T_apply`: Translating the target into device operations and calling low-level APIs.
+- `T_settle`: Physical settling still required after those calls.
+- `T_endpoint`: Remaining endpoint recovery and completion notifications that the application must await.
 
-Here, the finish line is meeting the prerequisites for the next round of communication; an API reply is only one possible notification mechanism.
+> When work overlaps, use the longest path through the dependency graph. If the SDK already waits for micromirrors to settle, adding the full physical actuation time again would double-count it. Endpoint recovery and device actuation may also run in parallel. This model identifies the work the application must await; inclusive timings from multiple software layers cannot simply be added together.
 
-In practical implementations with overlapping phases, latency follows the critical path of the dependency graph. For instance, if an SDK blocks until micro-mirrors settle, one must not double-count physical actuation time; similarly, if endpoint recovery runs concurrently with physical settling, their durations cannot simply be added. The purpose of this model is to pinpoint what the application truly waits for, rather than tallying coarse totals that obscure downstream invocations.
+Temporarily excluding endpoint recovery, let C denote serial control cost and P denote physical reconfiguration. This returns us to `T_ready = C + P`. The same device speedup produces different full reconfiguration times depending on the control path:
 
-Temporarily setting aside endpoint recovery, let serial control latency be $C$ and physical reconfiguration be $P$, returning to $T_{\text{ready}} = C + P$. The same physical speedup combined with different control paths yields starkly different full reconfiguration latencies:
+**Physical reconfiguration P = 20 ms:**
 
-| Serial Control Cost $C$ | $P = 20\,\mathrm{ms}$: Total Wait | Control Share | $P = 200\,\mu\mathrm{s}$: Total Wait | Control Share |
-| --- | ---: | ---: | ---: | ---: |
-| 5 ms | 25 ms | 20.0% | 5.2 ms | 96.2% |
-| 500 μs | 20.5 ms | 2.4% | 700 μs | 71.4% |
-| 100 μs | 20.1 ms | 0.5% | 300 μs | 33.3% |
+| Serial control C | Total wait C + P | Control share |
+| --- | ---: | ---: |
+| 5 ms | 25 ms | 20.0% |
+| 500 μs | 20.5 ms | 2.4% |
+| 100 μs | 20.1 ms | 0.5% |
 
-*The control share is calculated as $C / (C + P)$.*
+**Physical reconfiguration P = 200 μs:**
 
-**What truly transforms architectural requirements is how much time the application allocates to the control path.** If the control budget is capped at 10% of physical reconfiguration time ($C / P \le 10\%$), a 20 ms scenario permits a 2 ms control budget, whereas a 200 μs scenario allows merely 20 μs. This target turns the vague ambition that "control must be fast enough" into an explicit, verifiable constraint.
+| Serial control C | Total wait C + P | Control share |
+| --- | ---: | ---: |
+| 5 ms | 5200 μs | 96.2% |
+| 500 μs | 700 μs | 71.4% |
+| 100 μs | 300 μs | 33.3% |
 
-### How Does Control Latency Accumulate into Milliseconds?
-Network serialization and transit for requests and replies can be estimated from byte sizes. Assuming 1 KiB payloads in each direction with 128 B encapsulation overhead across two store-and-forward switches and three link hops: without retransmissions, bidirectional serialization takes ~55 μs at 1 Gb/s and ~5.5 μs at 10 Gb/s, excluding propagation and forwarding delays.
+Both tables calculate control share as `C / (C + P)`. The same control cost accounts for more of the wait as the device becomes faster.
 
-Once bytes arrive at the node, however, the request must traverse endpoint stacks, internal software handoffs, and low-level API invocations. Consider a concrete reference path: **warmed-up connections, low load, direct client access to the device service, a standalone Worker process on the device, two serial low-level API calls per reconfiguration, and a synchronous reply.** Based on typical overhead orders of magnitude in modern Tofino software stacks, we construct the non-overlapping hypothetical budget below; it represents neither universal OCS parameters nor measured statistical bounds.
+### How Does Waiting on the Control Path Add Up to Milliseconds?
 
-| Components of a Synchronous Request | Example Budget | Tasks Included |
+Network transmission of a request and reply can first be estimated from their byte sizes. Assume a 1 KiB payload and a further 128 B of encapsulation per direction, crossing two store-and-forward switches and three links. Without retransmissions, serialization in both directions takes about 55 μs at 1 Gb/s or 5.5 μs at 10 Gb/s. Propagation and forwarding are additional costs.
+
+Once the bytes arrive, the request still passes through endpoint software, internal device handoffs, and low-level API calls. Consider a warmed-up connection under low load: **the client sends one connection request to the device service; a separate execution process (Worker) calls the low-level API to delete affected old connection entries, waits for the result, then calls it again to install the target entries before replying to the client.** One application request thus contains two low-level submissions: deletion and installation. Each submission can batch multiple entries. Drawing on the cost scales of existing packet-switch software stacks gives the hypothetical budget below. It assumes this delete-then-install implementation; it provides neither universal OCS parameters nor measured statistical ranges.
+
+| Part of one synchronous request | Example budget | Work included |
 | --- | ---: | --- |
-| Network transit (request + reply) | 10–80 μs | Serialization, propagation, switch forwarding; excludes endpoint stacks |
-| Client and northbound processing | 0.5–1 ms | I/O, serialization/deserialization, request dispatch; excludes network transit |
-| Internal handoffs and non-programming work | 0.5–2 ms | Worker IPC handoffs, validation, queuing, state tracking; excludes low-level calls |
-| Two serial low-level API invocations | 3–4 ms | SDK client, low-level RPC, runtime processing, internal settling wait |
-| **Total** | **~4–7 ms** | **No standalone controller, standalone Worker, two serial low-level calls** |
+| Network transmission of request and reply | 10–80 μs | Serialization, propagation, and switch forwarding; excludes endpoint software |
+| Client and device northbound processing | 0.5–1 ms | I/O, encoding/decoding, and dispatch; excludes network transmission |
+| Internal device handoffs and non-programming work | 0.5–2 ms | Worker handoffs, validation, queuing, and state processing; excludes low-level calls |
+| Deletion and installation in two low-level submissions, combined | 3–4 ms | SDK client, low-level RPC, runtime processing, and waits within calls |
+| **Total** | **About 4–7 ms** | **No separate controller; a Worker; serial deletion and installation** |
 
-*Summing the range endpoints yields 4.01–7.08 ms, rounded in the table. The budget terminates at the synchronous API reply, which does not guarantee optical path readiness.*
+This example retains the interface processing, separate execution process, and low-level calls common in SDN device software. **Even before adding an independent global controller, control already costs about 4–7 ms.** Against physical reconfiguration of a few hundred microseconds, this software dominates the wait. Keeping control in step with device speed requires revisiting each stage: which coordination must happen online, which interface capabilities are needed on every request, and which device operations can reduce handoffs or run in parallel?
 
-Software stacks, device IPC handoffs, and low-level API calls dominate this budget. Below, we empirically evaluate these assumptions.
+## Architectural Choices: Three Separately Configurable Dimensions
 
-For applications that can tolerate only tens of microseconds of additional control delay, hundreds of microseconds of IPC and API overhead already exceed the budget. We must therefore evaluate which coordination steps must occur on every reconfiguration, how much overhead protocol handling introduces, and whether internal device handoffs can be minimized or parallelized. This brings us to three core architectural choices.
+Following a request from the application to the device raises three questions: must a global controller coordinate every operation, which interface admits the request, and how does the device execute it? These form three design dimensions: **① controller participation, ② control interface and protocol, and ③ device execution architecture.** We must assess both whether a capability is needed and whether another implementation can provide it within the budget.
 
-## Architectural Choices: Three Independent Design Dimensions
-The budget breakdown highlights three critical stages: whether requests must pass through a global controller, how they interface with the device, and how internal device software applies the target connections. These correspond to three orthogonal design dimensions: **① Controller Participation, ② Control Interface & Protocol, and ③ Device Execution Architecture.** Each dimension is judged against a single criterion: does the capability provided justify its latency cost within the given budget?
-
-| Design Dimension | Implementation Options | Primary Trade-offs |
+| Design dimension | Implementation choices | Main trade-offs |
 | --- | --- | --- |
-| ① Controller Participation | Per-request mediation vs. Preauthorized direct submission (bypass) | Online global arbitration vs. repeated coordination latency |
-| ② Control Interface & Protocol | Generic RPC vs. Lightweight request-reply protocol | Tooling richness and protocol features vs. processing overhead and maintenance burden |
-| ③ Device Execution Architecture | Standalone Worker vs. In-process adaptation; Serial actuation vs. Batched & multi-channel parallel control | Fault isolation and modularity vs. IPC handoffs, loading bandwidth, concurrency, and settling dependencies |
+| ① Controller participation | Central coordination on each operation / direct task submission after authorization (fast path) | Boundary between global coordination and local control |
+| ② Control interface and protocol | General-purpose RPC / lightweight request–response protocol | Tools and protocol capabilities, processing cost, and maintenance responsibility |
+| ③ Device execution architecture | Software: separate Worker / in-process adaptation; <br>Device: individual actuation / batched submission and multichannel control | Isolation and handoffs, configuration transfer efficiency, concurrency, and feedback dependencies |
 
-![Application requests pass through a global controller, device service, Worker, vendor runtime and device](/ReconfigNet-Sim/images/ocs-control-arch/en/sdn-control-architecture.svg)
+![The three design dimensions in an example with controller coordination on every request](/ReconfigNet-Sim/images/ocs-control-arch/en/sdn-control-architecture.svg)
 
-*Figure 3: One integration example using centralized SDN coordination, with ①, ②, and ③ corresponding to the table above. Application requests pass through a global controller to the device service, which calls the SDK via a Worker process; results return along the invocation path.*
+_Figure 4: One OCS integration example following centralized SDN coordination common in packet networks. The labels ①②③ correspond to the table. The application requests the device through a controller; the device service calls the SDK through a Worker; results return along the call path._
 
-These three dimensions can be varied independently: one can retain generic RPCs while permitting preauthorized direct submissions, or adopt lightweight framing while retaining a standalone Worker. Below, we estimate the magnitude of each trade-off under explicit assumptions to identify what is worth measuring. These are conditional estimates, not additive measured gains; specific combinations are discussed at the end of this section.
+These dimensions can be changed independently. General-purpose RPC can coexist with direct submission within authorized boundaries; a lightweight protocol can still use a separate Worker. We next estimate the scale of work each choice may affect.
 
-### ① Controller Participation: Per-Request Mediation or Preauthorization?
-When each reconfiguration competes for global optical ports, centralized controller arbitration is indispensable: determining whether a target topology is available requires global consensus. Other scenarios, however, differ significantly. Suppose a communication group holds exclusive leases on a subset of ports during a job run, such that internal topology reconfigurations do not affect external traffic. The global controller can pre-allocate resource boundaries, allowing a group representative to submit connection changes directly to the device. The device continues to validate permissions, targets, and version epochs, rejecting stale writers, while the controller supervises, reclaims leases, and handles fault recovery. **Unified management of global state does not require every authorized local operation to traverse the same remote orchestrator.**
+### ① Controller Participation: Central Coordination or Delegated Local Control?
 
-Bypassing the controller eliminates repetitive network hops, queuing, and processing, while retaining necessary on-device verification. It requires handling representative failures, lease revocations, and reconciliation when request outcomes are ambiguous. Where boundaries cannot be pre-assigned, online arbitration remains necessary; where they can, this hop can be removed from the critical execution path.
+Central coordination has clear value when reconfiguration affects network-wide resources. Google's [Jupiter Evolving](https://research.google/pubs/jupiter-evolving-transforming-googles-datacenter-network-via-optical-circuit-switches-and-software-defined-networking/), for example, combines OCS topology changes with traffic engineering under centralized SDN. Connection decisions must consider global traffic and topology. Other situations allow a different division. Suppose a communication group exclusively leases a set of ports, and local changes do not affect other jobs. The controller can establish the resource boundary in advance, then let a group representative submit changes directly to the device, matching topology to communication phases within one task. The device still checks permissions, targets, and versions to reject stale writers; the controller still supervises, reclaims resources, and handles recovery. **Unified management of global state does not require every authorized local operation to pass through the same remote executor.**
 
-To estimate the magnitude: if per-request coordination adds 100 μs of network RTT and 200 μs of controller processing and queuing that cannot be overlapped, preauthorization can shave **~300 μs** off the execution path. For scenarios with tens of microseconds of control budget, this hop alone warrants re-architecting; whether these savings materialize depends on any additional validation work placed on the device.
+This division removes repeated communication, queuing, and processing through the controller while retaining necessary device-side checks. It also requires handling representative failures, lease revocation, and takeover and state reconciliation when request outcomes are unknown. Online arbitration remains necessary where resource boundaries cannot be established in advance. Where they can, that hop can leave the execution path.
 
-Beyond *who* submits, dimension ① extends along the time axis: how much preparation can be performed in advance? If communication phases are predictable and the OCS supports pre-storing candidate configurations, runtime execution may only need to select and activate a pre-loaded configuration or trigger it at an agreed timestamp. Authorization and configuration preparation address distinct challenges: the former determines *who* can modify resources, while the latter minimizes the computation and loading work required *during* execution. Device memory constraints, clock skew, and schedule cancellation mechanisms govern feasibility.
+For a scale estimate, suppose per-operation coordination adds 100 μs of interaction and 200 μs of processing and queuing, with no overlap. Preauthorization could move about **300 μs** off the execution path. For a control budget of only tens of microseconds, this hop alone warrants reconsideration. Actual savings depend on the extra device work needed for direct submission.
 
-### ② Control Interface & Protocol: Generic RPC or Lightweight Request-Reply?
-Device management benefits from rich schemas, telemetry streaming, and mature tooling, which generic RPC frameworks readily provide. A latency-critical reconfiguration, however, may only need to convey target port pairs, credentials, version epochs, and completion status. If generic RPC processing stays within the latency budget, retaining it aids maintainability and ecosystem integration. If its overhead becomes non-negligible, a narrower control interface can handle execution, leaving YANG modeling and gNMI/gRPC to handle management and telemetry.
+### ② Control Interface and Protocol: General-Purpose RPC or Lightweight Request–Response?
 
-We explored a lightweight framing implementation, referred to here by its project name, `framed`: it uses length-prefixed framing to stream protobuf requests and responses, using persistent TCP northbound and Unix Domain Sockets (UDS) for internal IPC. This bypasses substantial generic RPC framing overhead, but requires implementing error handling, timeouts, reconnection, backpressure, and completion semantics manually. The baseline gRPC setup also reuses persistent connections, so latency deltas cannot be attributed to connection establishment; likewise, sharing protobuf schemas does not imply gNMI interoperability.
+Device management needs rich objects, telemetry, and mature tools. General-purpose RPC can reuse those capabilities. A time-critical reconfiguration may need only a target connection, authorization information, a version, and a completion result. If the general-purpose interface fits the budget, retaining it helps maintenance and integration. If its processing cost is significant, execution can use a narrower interface while YANG continues to describe connections and state and gNMI/gRPC retain management duties.
 
-Assuming connection reuse, low load, and identical wire transit, if optimizing endpoint protocol processing on both sides reduces request-reply overhead from 200 μs to 100 μs per hop, a single hop saves **~100 μs**, and two serial hops save **~200 μs**. These figures estimate endpoint processing and cannot be double-counted with thread handoff savings; whether narrower framing achieves this gain requires measuring the full execution path.
+We explored a **lightweight request–response interface** using length-prefixed messages and protobuf requests and responses. Persistent TCP connects applications to devices, and Unix domain sockets (UDS) handle internal device communication. This removes some general-purpose RPC processing, while error handling, timeouts, reconnection, and backpressure remain the implementer's responsibility. The gRPC baseline also reuses connections; the lightweight interface does not provide gNMI's full protocol capabilities.
+
+With the connection, load, and wire transmission held constant, suppose total protocol processing at both endpoints falls from 200 to 100 μs per complete request–response exchange. One exchange would save about **100 μs**, and two serial exchanges about **200 μs**.
 
 ### ③ Device Execution Architecture: From Software Handoffs to Parallel Control
-**③a Software layout determines the number of process handoffs.** Request handling, semantic validation, and SDK adaptation represent distinct responsibilities, but whether each requires an isolated process depends on the trade-off between isolation and the latency budget. A standalone Worker process isolates language runtimes and SDK crashes, but introduces serialization, socket overhead, thread wakeups, and queuing. In-process adaptation eliminates these handoffs, but requires language compatibility and broadens failure domains. Clean architectural boundaries should be maintained; process boundaries must justify their cost.
 
-If an internal UDS round-trip takes 30 μs, and message repackaging and thread dispatch add another 200 μs, collapsing this boundary into an in-process call could eliminate **~230 μs**, assuming negligible new inline overhead. This is a conditional estimate, not an intrinsic UDS constant. Both designs must maintain a single-writer discipline; consolidating worker processes neither eliminates concurrency queues nor bypasses underlying vendor runtimes (e.g., BFRT to `bf_switchd`).
+**③a Software organization determines how many handoffs a request requires.** Interface reception, semantic validation, and SDK adaptation are distinct responsibilities. Whether each needs its own process depends on isolation benefits and the time budget. A separate Worker can isolate language runtimes and SDK failures, while adding encoding/decoding, socket operations, thread wakeups, and queuing. In-process adaptation reduces handoffs but needs language and SDK support and broadens the impact of failures. Preserve clear responsibilities, and justify each process boundary by the benefit it provides.
 
-While ③a addresses software handoffs before reaching hardware (on the scale of hundreds of microseconds), once commands enter the device, waiting transitions to an entirely different physical scale: how the hardware actuates the requested connections.
+> Such handoffs are widely used in packet-switch software, including white-box systems such as SONiC and Stratum. [SONiC runs in production data centers at large cloud providers](https://sonicfoundation.dev/). In its [typical architecture](https://github.com/sonic-net/SONiC/wiki/Architecture), `orchagent` exchanges state through Redis with `syncd`, which calls vendor SAI/SDK interfaces. This supports modularity and hardware adaptation while adding state conversion, notifications, and process wakeups. A [SONiC community proposal for large data center route optimization](https://github.com/sonic-net/SONiC/blob/master/doc/route-performance/strategies/large-scale-datacenter-clos-fabric.md) reports that repeated serial Redis operations add about **500 μs–1 ms** per route at scale, and discusses using ZMQ to reduce Redis operations on the critical path. This is the scale reported for that scenario, rather than a fixed cost for all SONiC configurations.
 
-**③b Device actuation determines how many steps are required to realize a target.** A logical connection may involve adjusting phase shifts across multiple Mach-Zehnder Interferometers (MZIs) or reorienting pairs of 3D MEMS micro-mirrors. Bundling multiple operations into one command minimizes submission overhead, but whether the device loads configurations concurrently, drives actuators in parallel, and requires multiple feedback iterations to stabilize depends on low-level controller capabilities. **Fewer API calls do not imply parallel device actuation; concurrent actuation does not imply simultaneous convergence.**
+If an internal round trip takes 30 μs and message wrapping and thread dispatch add another 200 μs, merging that handoff could save about **230 μs**, assuming negligible additional work for an inline call. Both implementations must coordinate writes to the device so concurrent requests do not overwrite each other.
 
-Apollo provides an example of array-level control: the CPU programs MEMS mirrors via an FPGA, high-voltage drivers, and DACs, while feedback cameras capture images of each mirror array to allow the servo system to adjust multiple mirrors. While this avoids per-mirror host requests, array-level sensing and actuation do not guarantee atomic switching across all optical paths.
+After reducing software handoffs, device execution still needs inspection: how many operations must a connection target pass through before actual connectivity changes?
 
-Silicon photonics can likewise be driven concurrently via multichannel electronic controllers. [A study on integrated electronic controllers](https://arxiv.org/abs/2501.09664v1) used two 8-channel ASICs to control an MZI mesh with 16 parallel feedback loops. While individual thermal phase actuators responded in ~10 μs, first-stage configuration required ~1.5 ms, and overall convergence across a 4-stage mesh took ~10 ms: downstream stages could not settle until upstream stages stabilized. Although conducted on an adaptive beam-coupler rather than a commercial OCS, this experiment clearly demonstrates three distinct timescales: **actuator response, feedback convergence, and full-mesh settling.**
+**③b Device control determines how many steps implement one target.** A logical connection may require phase settings for several MZIs or orientation changes for multiple MEMS mirrors on both sides. Combining operations into one command reduces submission cost. Whether the device loads and drives those actuators simultaneously, and how many feedback rounds are needed to settle, are capabilities further down the path. **Fewer calls do not establish parallel device execution; simultaneous starts do not establish simultaneous completion.**
 
-![MZI multichannel drive and photodetector feedback beside MEMS array drive and camera feedback, with waiting-time sketches](/ReconfigNet-Sim/images/ocs-control-arch/en/device-parallel-control.svg)
+> - Apollo illustrates array-level control: the CPU sets MEMS states through an FPGA, high-voltage drivers, and DACs; feedback cameras image each mirror array, allowing the servo system to adjust multiple mirrors.
+>
+> - Multiple tuning elements in silicon photonics can also operate simultaneously, but stages along a connection may depend on one another. A downstream stage may need an upstream stage to settle before it can finish calibration.
 
-*Figure 4: Original schematics illustrate concurrent actuation and feedback (MZI multichannel drive and photodetector feedback beside MEMS array drive and camera feedback). Concurrent commands do not imply atomic optical switching. The timing sketches compare serial, grouped, parallel, and dependent settling; they are not product latency measurements.*
+![Multichannel drive and feedback for MZI and 3D MEMS devices](/ReconfigNet-Sim/images/ocs-control-arch/en/device-parallel-control.svg)
 
-Device-side execution time can thus be decomposed into: command submission, configuration loading, multi-stage feedback convergence, and final acknowledgment. Within any parallel stage, latency is bounded by the slowest settling channel; sequential dependencies between stages accumulate additively. Where loading and actuation overlap, latency follows the longest path in the actual dependency graph rather than the sum of loading times.
+_Figure 5: Control structures for two device types, with packaging and some optical elements omitted. Arrows distinguish optical paths, electrical drive, and feedback._
 
-Consider a simplified hypothetical example: adjusting 16 uncoupled channels, each requiring 70 μs to settle. Assuming configuration loading takes 40 μs, final acknowledgment takes 20 μs, submission overhead is excluded, and phases do not overlap:
+Device execution time can therefore be broken down into command submission, configuration loading, convergence through dependent rounds, and final confirmation. Within each independently parallel round, the slowest relevant channel determines the wait. Dependencies between rounds add further waiting.
 
-| Execution Pattern | Settling Rounds | On-Device Waiting Time |
-| --- | ---: | ---: |
-| Serial drive (settle before proceeding) | 16 | 40 + 16 × 70 + 20 = **1.18 ms** |
-| Grouped drive (4 channels parallel per group) | 4 | 40 + 4 × 70 + 20 = **340 μs** |
-| Fully parallel (16 channels concurrent) | 1 | 40 + 70 + 20 = **130 μs** |
+### Combining the Three Choices into a Candidate Division of Responsibilities
 
-*The 70 μs parameter is specific to this example, not a universal lower bound for individual MZIs.*
+Consider a fast-reconfiguration use case where resources can be allocated in advance, the device can validate authorization, and the SDK supports in-process adaptation. One candidate worth testing has the controller coordinate resources beforehand, then handle authorization, supervision, and reclamation. A group representative submits directly over a lightweight request–response protocol. The device validates and adapts SDK calls in one process, submitting batched targets to the vendor control stack through a single-writer queue. The device applies the target using its own drive concurrency and feedback mechanisms and reports the agreed result. Compared with Figure 4, this combination streamlines all three dimensions, but it is one of many possibilities. Individual choices can also change independently.
 
-This breakdown demonstrates that beyond intrinsic actuator speed, one must ask: how many actuators change state, how many channels can the driver actuate concurrently, how fast can configuration bytes be transferred, and how many feedback iterations are required? Transferring $B$ bytes at rate $R$ requires at least $B/R$ seconds of irreducible transit time. Scaling channel counts, bus bandwidth bottlenecks, or thermal crosstalk corrections can easily stretch the critical path. Published sub-millisecond figures for commercial hardware do not reveal their underlying internal control mechanisms.
+![A candidate combining preauthorization, direct submission, and in-process adaptation](/ReconfigNet-Sim/images/ocs-control-arch/en/candidate-architecture.svg)
 
-### Synthesizing Choices into a Candidate Architecture
-Evaluating these three dimensions enables concrete architectural synthesis. Consider a fast-reconfiguration workload where resources can be pre-allocated, the device can validate authorization tokens, and the SDK supports in-process binding. A promising candidate architecture emerges: the controller coordinates resources offline, handling only authorization, health monitoring, and reclamation; group representatives submit requests directly via a lightweight request-reply protocol; the device performs validation and SDK adaptation in-process, submitting batched targets to vendor runtimes through a single-writer queue; the device then drives actuators and feedback according to its hardware concurrency, reporting completion per contract. Compared with Figure 3, this design chooses the streamlined end along all three axes, though intermediate combinations remain viable.
+_Figure 6: One combination of the three design dimensions, with roles in the same positions as Figure 4. Dashed lines indicate preauthorization, supervision, and reclamation; solid lines indicate per-request submissions, device calls, and results. The device retains validation, a single-writer queue, and the vendor runtime. Lower-level concurrency and convergence still need separate verification. This combination has not been validated end to end._
 
-![Preauthorization lets applications submit lightweight requests directly to an in-process device service and SDK adapter](/ReconfigNet-Sim/images/ocs-control-arch/en/candidate-architecture.svg)
+The two architecture diagrams help identify work moved ahead of time, handoffs merged, and device costs that remain. We next introduce the platform and examine which conclusions the evidence supports.
 
-*Figure 5: One candidate combination of the three design choices, using the same role positions as Figure 3. Dashed lines show preauthorization, supervision, and reclamation; solid lines show per-request calls, device invocations, and replies. The device retains validation, single-writer queuing, and vendor runtimes; lower-level concurrency and settling must be independently verified. This candidate has not been validated end-to-end.*
+## Experimental Platform: Emulating Connection Changes with Intel Tofino
 
-Comparing these two architectural diagrams clarifies which operations move offline, which software handoffs are collapsed, and which device latencies remain unavoidable. We now turn to our experimental platform to examine the empirical evidence.
+A physical OCS changes optical paths between ports. ReconfigNet-Sim uses an Intel Tofino programmable switch to **emulate connection changes by changing which port pairs may forward packets**. The P4 pipeline first selects a candidate egress, then checks a permission table for the ingress–egress pair. Only packets permitted by the current connection mapping pass. Updating that table disconnects an old logical connection and enables a new one, providing a repeatable platform for schedulers and control software.
 
-## Experimental Platform: Inspecting the Control Path with Tofino
-Grounding these architectural trade-offs in verifiable timing budgets requires a platform that allows continuous software modification alongside real-time connectivity observation. Because commercial OCS devices differ widely in physics, port counts, software stacks, and availability, building complete optical testbeds for every control path iteration is impractical. ReconfigNet-Sim was designed to decouple the development of surrounding networking systems from optical hardware, providing controllable connectivity dynamics for systematic benchmarking.
+For example, if an application requests a change from A–B to A–C, the device revokes the old forwarding permission and installs the target permission. **The application sends only one connection request. The device service may submit deletion of the old permissions to the low-level API, wait for its reply, then submit installation of the target permissions.** We call this “separate deletion and installation submissions.” Putting both operations into one low-level request is a “combined submission.” Either submission can contain multiple entries; the count refers to calls from the device service to the low-level API.
 
-Following our control framework, Tofino receives connection requests, validates and translates them via an Agent, and applies them through vendor control interfaces. The difference lies in the data plane: the BFRT client issues local gRPC calls to the runtime daemon `bf_switchd`, programming P4 match-action tables to toggle packet forwarding between logical ports. Electrical links remain up throughout; the platform exercises the complete software, runtime, and hardware control path, but does not replicate optical transient physics or physical link retraining.
+The two control paths have comparable responsibilities: an application submits a connection target, a device agent checks and translates it, and a vendor API applies it. In ReconfigNet-Sim, the Agent changes permission entries through a BFRT client and the vendor runtime `bf_switchd`. This lets us measure software processing, internal handoffs, and device calls, then check their effects with actual packet forwarding.
 
-![Physical OCS control responsibilities map to ReconfigNet-Sim and Tofino, while their connectivity mechanisms differ](/ReconfigNet-Sim/images/ocs-control-arch/en/platform-comparison.svg)
+![Corresponding implementations of a connection change in physical OCS and Intel Tofino](/ReconfigNet-Sim/images/ocs-control-arch/en/platform-comparison.svg)
 
-*Figure 6: Functional comparison between a physical OCS and the Tofino platform. The two sides align across connection requests, device control, and connectivity changes, but differ in physical mechanisms. Tofino table updates do not replicate optical power settling, wavelength tuning, BER, PHY retraining, or NIC recovery; furthermore, P4 parses and processes packet headers, lacking the protocol transparency of physical OCSs.*
+_Figure 7: Both sides receive the same type of port connection target. A physical OCS changes optical paths; ReconfigNet-Sim changes forwarding permissions between port pairs to emulate logical disconnection and connection._
 
-This setup accurately answers questions such as "how long do software handoffs take?" and "what portion of the budget does the vendor runtime consume?", verifying control optimizations against real forwarding traffic. Our experiments use physical Tofino-1 hardware; we do not substitute software simulation models for physical measurements, nor do we extrapolate software latencies directly into optical switching times. See the [Simulation Principles and Boundaries](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/blob/main/docs/ocs-simulation-principles-and-boundaries.md) document for a complete accounting of these boundaries.
+The emulation covers logical connectivity: electrical links stay up, and P4 parses and processes packets. Optical power settling, bit error rate (BER), physical-layer link training, and NIC recovery still require real optical devices. The following measurements were taken on a physical Intel Tofino-1, within the [project's stated boundaries](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/blob/main/docs/ocs-simulation-principles-and-boundaries-zh.md).
 
-## Experimental Evidence: Paths, Processes, and Device Invocations
-Experiments ran on physical Tofino-1 hardware with BF-SDE/BFRT 9.3.1 and an Intel Pentium D1517 control CPU. After warming up connections, a single-writer thread repeatedly submitted topology updates. Common baseline settings included DELTA updates, batched device calls, zero artificial delay gaps, and `CACHED_ACK` (acknowledging requests after successful southbound invocation and caching state locally, avoiding synchronous hardware readbacks).
+## Experimental Observations: How Does Reshaping the Control Path Reduce Waiting?
 
-Beyond these common settings, four comparative configurations were evaluated:
+This section fixes the direct-submission fast path described earlier: **the client sends connection targets directly to the device service, which retains permission, target, and version checks.** The experiments do not compare controller participation modes or measure the cost of passing each request through an independent controller. Within this boundary, we follow the request execution order in Figure 3: **② control interface and protocol, ③a software handoffs within the device service, then ③b low-level API calls**. Finally, continuous packet probes check when the new path begins forwarding and how long communication is interrupted during the change.
 
-- **End-to-end path comparison**: CPU @ ~800 MHz; client access over an external management network; comparing full gRPC against a bundled optimization across 5 runs of 2,000 reconfigurations each.
-- **Process layout comparison**: CPU @ ~800 MHz; local TCP on the switch CPU; comparing Go Core + Python Worker, Python single-process, and Go single-process across 200 warm writes per run.
-- **Invocation count comparison**: CPU @ ~1.2 GHz; local TCP; comparing two sequential BFRT calls against a single merged call across 200 warm writes per run.
-- *These variants reside on internal development branches and are not yet fully available as official options in the public repository.*
+`T_API` runs from the client's request to its successful reply. The SDK programming interval within it, `T_SDK`, includes SDK client processing, low-level RPC, the vendor runtime, and waits inside the call. It corresponds to the low-level API work within `T_apply`. We subtract the SDK interval from the API interval for each request before calculating statistics. The remainder includes upper-layer processing and communication; subtracting two p99 values would not produce its p99. Local diagnostics explain costs, while a client on a separate host validates changes to the full path.
 
-Our measurements evaluate ② Control Interface & Protocol and ③ Device Execution Architecture (specifically software handoffs and vendor runtime invocations); they do not include a standalone remote controller hop, nor do they measure optical actuator convergence. We examine end-to-end path optimizations, device process organizations, and lower-level runtime invocation costs. First, we define the observed metrics:
+### Control Interface and Protocol: Streamlining Request–Response Processing
 
-| Metric | Timing Interval | Purpose |
-| --- | --- | --- |
-| API Latency | Client issues operation → Client receives reply | Measures how long callers wait on the interface |
-| Device Programming Interval | Backend starts programming → Low-level API returns | Aggregate of SDK, low-level RPC, runtime processing, and internal wait |
-| New-Path Observation Latency | Request submitted → First probe packet received on new path | Measures when the data plane is observed to forward traffic |
-| Blackout | Last packet received on old path → First packet received on new path | Data plane forwarding gap observed by probes |
+First, consider how a request enters the device. Earlier, we distinguished general device management from time-critical connection execution. Execution primarily needs to carry a target connection, authorization information, a version, and a completion result. We built a lightweight request–response protocol around those requirements, using length prefixes to frame protobuf messages over persistent TCP connections. In the lightweight implementation that retains a separate execution process, internal communication uses the same framing over UDS.
 
-These metrics measure the same reconfiguration from different vantage points and are not additive. API replies and new-path probe packets follow independent completion paths; probe timings also incorporate transmission intervals and packet scheduling. Software intervals are derived by subtracting nested timing timestamps on a per-request basis before computing aggregate statistics: e.g., $\text{Non-device Interval} = \text{API Total} - \text{Device Programming Interval}$. One must not add a Worker's total duration to the BFRT call it encompasses, nor subtract p99 values across mismatched distributions; percentiles use nearest-rank throughout.
+The purpose is to reduce protocol processing and request dispatch in a general-purpose RPC framework. Both interfaces reuse connections, and the lightweight version must still handle errors, timeouts, reconnection, and backpressure. For OCS integration, this is dimension ②: preserve the semantics required for execution while examining how much work the interface's general capabilities add to every reconfiguration.
 
-### End-to-End Path: What Do Bundled Optimizations Yield?
-**Reducing software overhead along the control path makes new paths observable earlier, but forwarding availability and blackout windows do not improve proportionally.** The first experiment retained two sequential BFRT calls (delete followed by insert) on the device, comparing the baseline gRPC path against a bundled set of optimizations.
+After entering the device, the request still passes through validation, translation, and low-level adaptation. These stages contribute to waiting alongside protocol processing. We therefore examine the device service next, then observe their combined effect in the same cross-host comparison.
 
-The baseline stack consisted of: Remote Client → gRPC Northbound → Go Core → Local gRPC Worker → Dedicated Python Execution Thread → BFRT. The optimized bundle introduced `framed` northbound and worker protocols, compact success responses, reduced thread dispatch hops, and pinned CPU affinities. This bundle retained the Python Worker, without in-process adaptation. Both setups executed 5 runs of 2,000 successful reconfigurations each, measured by busy-polling probes targeting 20 μs intervals.
+### Device Service: Reducing Handoffs Across Languages and Processes
 
-| Architecture | New-Path Obs. p50 | New-Path Obs. p99 | Blackout p99 |
+The external client uses Go, a common choice for network control planes. **The device-side interface service that receives network requests also uses Go.** Initially, the device retained the vendor's Python examples and BFRT client, producing a Go interface service plus a Python execution process. The former receives and validates connection targets; the latter translates them into low-level operations. Both run on the device control host and together fulfill the device Agent's responsibilities.
+
+This division makes existing examples easy to integrate, but each target must cross language and process boundaries. To reduce the software handoffs in ③a, we generated interface code from the public `bfruntime.proto` and implemented a Go BFRT client. The interface service, validation, and low-level adaptation then run in one process, which continues to connect to the existing vendor runtime, `bf_switchd`.
+
+Merging processes reduces message passing, thread wakeups, and scheduling. Replacing the client also reduces some request construction and encoding/decoding work. The older Python version and pure-Python protocol library on this platform interpret operations and handle dynamic objects individually; compiled Go code can reduce part of that user-space processing. These costs occur in both the interface service and the SDK client, so changes to software organization can also change the measured SDK programming interval.
+
+Earlier local diagnostics help explain the cost. At about 800 MHz, with deletion and installation still submitted separately, moving from the Go service plus Python execution process to a single Python process, then to a single Go process, reduced the mean interval outside the SDK from about **1003 μs to 667 μs and then 303–307 μs**. Further client simplification, a control CPU frequency of about 1.2 GHz, and a different build brought it down to about **140 μs**, before combining the low-level submissions.
+
+On the full path between hosts, **the lightweight protocol and in-process adaptation together reduced mean API latency from 3777 to 1069 μs**. The comparison in Figure 8 uses the same external client and management-network path, with the same performance governor, two fixed control CPU cores, and a frequency of about 1.6 GHz. The northbound protocol, internal handoffs, and BFRT client implementation change together; the result reflects the whole combination.
+
+![Cross-host API latency with lightweight messaging, in-process adaptation, and combined low-level submissions](/ReconfigNet-Sim/images/ocs-control-arch/en/latency-comparison.svg)
+
+_Figure 8: The first comparison combines the lightweight protocol and in-process adaptation. The bottom configuration also combines deletion and installation into one low-level submission, discussed next. Stacks show the mean SDK programming interval and the mean remainder; the right column gives the range of API p99 values across repeated runs._
+
+For integration with a physical OCS, this concerns execution within the device service. Target translation, interprocess communication, and request encoding/decoding all enter each reconfiguration's budget. Evaluating software organization requires examining both the service and its client libraries to determine which work a request still has to await.
+
+### Low-Level APIs: Reducing Submissions and Examining the Remaining Wait
+
+Requests now reach the low-level API faster. The next question, from ③b, is: **how many serial device operations does one connection target require?** The original implementation made separate BFRT submissions to delete old permissions and install target permissions, waiting for `bf_switchd` after each. Since the service already knows the full target, it can combine both operations into one batched request and remove one low-level API round trip.
+
+For the same Go implementation in Figure 8, **mean cross-host API latency falls further from 1069 to 820 μs, while SDK programming falls from 694 to 469 μs**. From the original structure to the final candidate, mean API latency falls by about **78%, a speedup of about 4.6×**. API p99 values across the final candidate's repeated runs are 1238–1388 μs.
+
+The local diagnostics in Figure 9 explain the remaining cost. With work outside the SDK already reduced to about 140 μs, combining the submissions leaves about 491–496 μs in the SDK and 632–634 μs in the full API, so the device API path accounts for nearly 78%. This share belongs to the local diagnostic configuration. In the full cross-host candidate, the mean SDK interval is about 469 μs, or **57%** of API latency, with about 351 μs remaining. The remainder's p99 is **492–527 μs**.
+
+![Local diagnostics of device-service software cost and low-level submission count](/ReconfigNet-Sim/images/ocs-control-arch/en/runtime-cost.svg)
+
+_Figure 9: Local diagnostics explain costs. Left: the interval outside the SDK as device-service implementations and operating conditions change. Right: API composition with separate deletion and installation submissions versus one combined submission. The dashed divider separates changes in frequency, client implementation, and build conditions._
+
+As upper-layer protocol processing and software handoffs shrink, the device API path becomes the largest individual source of waiting. **For a physical OCS, further improvement requires device vendors and integrators to optimize control interfaces and runtimes together.** Integrators can reduce target translation, request wrapping, and repeated submissions. Vendors need to examine how the runtime receives targets, advances device execution, and reports completion. Whether the system can promptly use faster switching also depends on this control path.
+
+Here, combining requests reduced the number of API steps. For a physical OCS, support for complete connection targets and batch operations determines how many round trips the system pays for. Internal parallelism and the point at which connectivity becomes usable require further checks of device capabilities and completion semantics.
+
+**After control requests become faster, when does forwarding actually switch?** Separate from the API timings, continuous packet probes measure the time from a request to the first reply over the new path (`T_visible`) and the blackout between the last reply over the old path and the first over the new one. The first metric shows when the target connection becomes visible to traffic; the second shows how long communication is interrupted.
+
+| Data-plane observation (p99) | Original multiprocess path; separate deletion and installation | Go in-process adaptation; separate deletion and installation | Go in-process adaptation; combined submission |
 | --- | ---: | ---: | ---: |
-| Full gRPC multiprocess baseline | 4.914 ms | 5.490 ms | 2.776 ms |
-| Optimized bundle (`framed`, fewer handoffs, compact replies, CPU pinning) | 3.320 ms | 3.817 ms | 2.490 ms |
+| Request to first reply over the new path, `T_visible` | 4000 μs | 1695 μs | 1539 μs |
+| Switching blackout | 3113 μs | 1460 μs | 1180 μs |
 
-The p99 new-path observation latency dropped by ~30.5%, while p99 blackout dropped by ~10.3%. Accelerating request handling reduces total waiting time after triggering; the data-plane blackout duration, however, remains governed by device execution dynamics. These gains reflect the combined configuration, including CPU pinning, and cannot be credited to `framed` alone. The actual probe intervals reached ~24/22 μs at p99, so results cannot simply subtract a static "20 μs measurement error."
+Within this set of observations, new-path visibility p99 improves by about 61.5%, and blackout p99 by about 62.1%. The control-path changes also improve actual forwarding transitions. The measured probe interval has a p99 of 49–58 μs; observations include probing and receive scheduling. Even the improved p99 cannot guarantee that every transition meets an application's budget.
 
-Importantly, while this baseline includes full gRPC and internal IPC handoffs, the client communicated directly with the device without traversing an independent global controller. **These data support streamlining on-device execution, but do not measure the gains of bypassing a centralized controller.** The preauthorization model in our candidate architecture remains an architectural proposal awaiting end-to-end evaluation.
+> These experiments validate changes to the control interface, device service, and low-level submissions. A physical OCS still requires optical settling and endpoint recovery measurements to check the full application-readiness budget.
 
-### Latency Breakdown: Where Did the Milliseconds Go?
-Our hypothetical budget assumed a standalone Worker and two low-level API calls. Our empirical API measurements span this exact structure, allowing us to validate the orders of magnitude. Aggregating 5 runs of 2,000 requests each for both the gRPC baseline and the optimized bundle, we compute per-request nested differences and take the mean to produce mutually exclusive intervals:
+## From Control Budgets to System Design: Recommendations for Industry
 
-| API Budget Item (Mean) | Full gRPC Baseline | Optimized Bundle + CPU Pinning |
-| --- | ---: | ---: |
-| Client / Northbound residual | 847.4 μs | 532.5 μs |
-| Core logic (excluding Worker call) | 58.2 μs | 59.3 μs |
-| Worker RPC residual (excluding Worker internal) | 1,167.7 μs | 364.2 μs |
-| Worker internal (excluding device programming) | 701.4 μs | 294.3 μs |
-| BFRT device programming interval | 3,818.1 μs | 3,144.5 μs |
-| **Total API Latency** | **6,592.8 μs** | **4,394.8 μs** |
+**Design fast OCS systems by working backward from the application's waiting-time budget to control responsibilities, interfaces, and device execution.** The changes above show that control software determines how much of the device's speed reaches the application. System integrators, device vendors, and standards communities need to make this time budget concrete in the interfaces and implementations they own.
 
-In this test, each reconfiguration deleted six table entries and inserted six, split across two BFRT calls; the data-plane probe experiments above deleted and inserted four entries each. Because these represent different request payloads and measurements, API means cannot be compared directly with new-path percentiles. Northbound overhead totaled ~0.85 → 0.53 ms including network transit; Core, Worker IPC, and non-programming tasks totaled ~1.93 → 0.72 ms; two BFRT calls totaled ~3.82 → 3.14 ms. Total mean API latency dropped from ~6.59 ms to 4.39 ms, aligning closely with our 4–7 ms hypothetical budget. **Hypothetical budgets help locate overhead; empirical measurements confirm actual costs.**
+### Organize Execution Around the Application Budget
 
-### Process Organization: How Much Latency Do Process Boundaries Add?
-The second comparison evaluates the software layout in ③a. Using identical local clients, ~800 MHz CPU frequency, and the `framed` protocol, we evaluated three architectures: Go Core + Python Worker, Python single-process, and Go single-process (calling BFRT directly). Each ran 200 warm writes per run with two BFRT calls; two distinct runs of Go single-process are shown:
+**Use the application's deadline and the facts that establish readiness as inputs to control architecture.** Infrequent topology changes can amortize configuration costs. Reconfiguration at every communication phase incurs those costs before each round. The latter needs execution organized around its budget: where resources can be assigned ahead of time, the controller authorizes and coordinates first, then tasks submit directly within that authorization. The device retains online permission, version, and target checks. Along the three design dimensions, reduce protocol processing, software handoffs, and device operations, and move work that can be completed early away from the trigger.
 
-| Implementation | Non-Device Interval (Mean) | Non-Device Interval (p99) |
-| --- | ---: | ---: |
-| Go Core + Python Worker | 1,003.3 μs | 1,272 μs |
-| Python single-process | 667.1 μs | 924 μs |
-| Go single-process, Run A | 307.0 μs | 408 μs |
-| Go single-process, Run B | 302.8 μs | 570 μs |
-
-Compared with the multi-process setup, Python single-process reduced mean non-device latency by ~336 μs; Go single-process runs landed at ~303–307 μs. While several hundred microseconds might appear minor within a multi-millisecond budget, it can make or break feasibility when operating under sub-millisecond budgets. Even on the same physical host, process, runtime, and scheduling boundaries impose substantial costs.
-
-![Independent panels compare new-path p50 and p99 with non-device interval mean and p99](/ReconfigNet-Sim/images/ocs-control-arch/en/latency-comparison.svg)
-
-*Figure 7: Left: End-to-end path comparison (new-path observation p50 and p99 across the management network, ~800 MHz, 10,000 samples per group). Right: Device process layout comparison (non-device intervals over local TCP, ~800 MHz, 200 samples per run, including two Go single-process runs). Panels represent independent experiments with different conditions; line segments are not confidence intervals.*
-
-These implementations simultaneously vary languages, protocol libraries, and runtime schedulers; even between Go runs, environmental factors were not entirely identical, so differences cannot be attributed entirely to process boundaries. The data confirm that software handoffs carry measurable costs; isolating pure process-boundary costs would require fixing the language, northbound interface, and backend while changing only the process layout. We compared Python and Go because the former is interpreted and the latter is compiled (analogous to C/Rust), providing visibility into the overhead of language runtimes rather than establishing a language benchmark.
-
-Repeated targets can also reuse precomputed configuration mappings. In Python single-process records, across three runs without memoization and four runs with memoization (200 warm writes each), mean non-device latency dropped from ~694.1 μs to 635.7 μs—a saving of **~58.3 μs**. This demonstrates the benefit of eliminating redundant software computation for repeated targets; it does not measure pre-loading hardware actuator states. Because this delta is tens of microseconds, consistent instrumentation is vital: in this embedded Python environment, calling `time.monotonic_ns()` took ~2.193 μs; making 8–10 calls per request incurred 18–22 μs purely in timestamping overhead, easily obscuring memoization gains.
-
-### Device Invocations: What Costs Remain After Streamlining Upper Layers?
-Process layout represents only one layer of the control path. To examine lower-level costs, we evaluated Go single-process directly driving BFRT at ~1.2 GHz with persistent `framed` connections, compact replies, and CPU pinning. **Even after substantially trimming upper software layers, device programming continues to dominate the remaining latency.** For hardware vendors, minimizing the latency required to turn an intent into hardware state is intrinsic to fast switching.
-
-We illustrate this by comparing two sequential BFRT calls (delete followed by insert) against a single merged call. Following 50 warmup iterations, each run recorded 200 changed writes; the client ran locally on the switch CPU, excluding external network latency.
-
-| Go Direct Architecture | API p50 / p99 | Device Programming p50 / p99 | Non-Device p99 |
-| --- | ---: | ---: | ---: |
-| Two device calls | 852 / 1,174 μs | 715 / 998 μs | 202 μs |
-| Single call, Run A | 625 / 782 μs | 490 / 591 μs | 203 μs |
-| Single call, Run B | 622 / 1,021 μs | 486 / 751 μs | 215 μs |
-
-Eliminating one API call reduced median device programming latency by ~0.23 ms, while non-device overhead remained unchanged. While merging calls is an implementation detail, it points to a broader architectural reality: **how many serial invocations a reconfiguration requires, and how much fixed processing each incurs, directly shapes the execution budget.** Whether these steps can be batched or must be driven sequentially by the caller is a fundamental API design question.
-
-![API and BFRT programming p50 and p99 for two device requests and two runs with one request](/ReconfigNet-Sim/images/ocs-control-arch/en/runtime-cost.svg)
-
-*Figure 8: API latency and BFRT programming intervals (p50 and p99) under identical Go direct conditions (~1.2 GHz, local TCP, 200 samples per run) for two device calls versus two single-call runs. BFRT programming is nested inside API latency and the two are not additive.*
-
-The ~0.5 ms programming interval encompasses the BFRT client, local gRPC, `bf_switchd`, OS scheduling, and call waiting; pure hardware programming time has not been isolated. For context, the same atomic write took ~2.4 ms via the Python BFRT client versus ~0.49 ms via Go—switching languages trims client-side overhead, but server-side daemon latency remains. These runs feature different structures and conditions, serving only to differentiate client and daemon boundaries rather than establishing ASIC or OCS physical limits.
-
-The `ROLLBACK_ON_ERROR` flag used in merged calls specifies error-handling semantics; it provides no data-plane atomic switching guarantee. This experiment evaluates submission granularity in ③b; parallel actuation across MZIs or MEMS mirrors remains unmeasured here.
-
-Photonic literature also confirms that driver stages can dominate system reconfiguration times. A [2024 Nature Communications paper](https://www.nature.com/articles/s41467-024-45888-7) describes a general-purpose programmable photonic processor using a programmable current-source array to drive 304 phase actuators; the authors state that setting and readout are dominated by the electronic driver units, requiring **15–90 ms** for full reconfiguration. While this RF processor is distinct from ONE-32 and cannot represent commercial datacenter OCS metrics, it underscores that driver and readout architectures can dictate system reconfiguration speed.
-
-While BFRT illustrates submission costs, λλ highlights that configuration generation can also introduce significant latency. Supporting rich photonic programmability requires compilers to map logical programs onto physical meshes. For fast switching, systems must distinguish **how long it takes to compile a new configuration, how long it takes to load it, and how long it takes to select and activate an existing one.** Only configurations that must be generated dynamically online enter the per-reconfiguration critical path; offline compilation belongs to pre-computation phases.
-
-One cannot assume programmable optical switches inherently lack fast-switching capability simply due to compilation overhead. The key questions to ask of devices and software stacks are: when high-level targets change, what costs must be paid online? Can known targets be staged in advance, and what fast runtime interfaces exist to trigger them? We reference λλ to illustrate configuration generation responsibilities; specific compilation latencies and experimental conditions await complete verification.
-
-Workload arrival rates further alter the budget. Consider a basic queuing estimate: if a single-writer service takes 0.5 ms per request, and requests arrive as a Poisson process at 1,600 req/s, service utilization reaches 80%. Under an M/D/1 queuing model, average queuing delay is ~1 ms, pushing total turnaround to ~1.5 ms. While an idealized estimate rather than measured tail latency, it reminds us that a control path meeting budgets when idle can easily breach them under sustained traffic.
-
-Our empirical findings confirm that software architecture and device interfaces directly dictate end-to-end execution latency, and optimizations at different layers yield distinct benefits. The two most critical gaps remaining to be measured are: holding device paths constant while comparing centralized forwarding against preauthorized direct submission, and holding language and interfaces constant while isolating process-boundary costs. These tests will independently isolate controller participation and internal isolation costs.
-
-## The Latency Floor of Software Paths: How Fast Can General-Purpose CPUs Go?
-Pushing these architectural dimensions to their limits inevitably encounters irreducible software latency floors. These are not implementation bugs in a given protocol, but intrinsic overheads of general-purpose CPUs, operating systems, and management protocol stacks:
-
-| Structural Layer | Order of Magnitude | Operational Context |
-| --- | ---: | --- |
-| System calls / Thread wakeups & context switches | 0.1–2.5 μs per event | Paid on every thread and process handoff |
-| Kernel network stack (per packet, unidirectional) | Several to 20 μs | Kernel bypass can achieve 1–3 μs, altering the architecture |
-| PCIe device register read/write | 0.3–1 μs | Largely independent of CPU clock frequency |
-| End-to-end management protocols | $10^1$ ms | SONiC official telemetry takes 68 ms/round (large counter set); gNMI config is only 1.5–3× faster than NETCONF |
-
-CPU frequency scaling illustrates this bound: scaling from 800 MHz to 1,200 MHz shortened only CPU-bound phases proportionally (measured ratios of 0.55–0.70), while fixed overheads remained unchanged. "Upgrading to a faster CPU" cannot change the order of magnitude.
-
-Eliminating these fixed overheads entirely (using shared memory on the same host, kernel bypass, zero-allocation data paths, and real-time scheduling) pushes the software latency floor to roughly **20 μs (p99)**, with an absolute theoretical limit around **4–8 μs**; going faster requires abandoning general-purpose OS stacks. For comparison, FPGA-based control planes can achieve link-establishment decisions in **500 ns**, with end-to-end link setup demonstrated at **8.36 μs**; JOCN sets a benchmark target of **20 μs (including hardware actuation)**.
-
-Thus, the performance ceiling originates in **the cost structure of SDN stacks, not CPU clock speeds**. For slow MEMS switches (30–200 ms), this ceiling is irrelevant: a 1.5 ms control budget accounts for less than 5% of physical switching time. For silicon photonics (~200 μs), it dictates whether standard control architectures can support dynamic switching at all. Achieving sub-200 μs end-to-end reconfiguration requires driver-level programming (a single write through `bf_switchd` on our platform consumes 0.35–0.72 ms); protocol and process tuning alone are insufficient.
-
-## Scenario Trade-offs: How to Combine These Three Choices?
-No single combination of these three design dimensions is universally optimal. The same interface means very different things for low-frequency topology adjustments versus per-phase reconfigurations: the former easily amortizes configuration overhead, whereas the latter forces applications to wait before every communication round. Combining these choices requires evaluating two primary application conditions: how much control latency the application budget allows, and whether reconfiguration targets can be known in advance.
-
-| Control Budget | Targets Determined Dynamically On Demand | Targets Predictable & Prepared in Advance |
+| Control budget | Target determined when the request arrives | Target can be prepared ahead of time |
 | --- | --- | --- |
-| Generous (e.g., several ms allowed) | Prioritize generic management interfaces and process isolation; monitor queue lengths | Retain generic interfaces; evaluate whether pre-staging adds sufficient value |
-| Tight (e.g., tens to hundreds of μs allowed) | Minimize mandatory coordination and handoffs; inspect online translation, SDK overhead, and tail latencies | Investigate pre-generation, pre-loading, timed, or local triggering; verify hardware capabilities |
+| Relatively loose, for example several ms | Prioritize general management and isolation, then verify full-path latency | Prepare ahead when the benefits justify the preparation cost |
+| Tight, for example tens to hundreds of μs | Streamline online coordination, protocol processing, and handoffs; inspect SDK costs and tail latency | Generate, translate, and load configurations early; select and activate at execution time, with device support |
 
-*The right-hand column assumes predictable workloads; our experiments have not yet validated the end-to-end benefits of pre-loading and fast activation. Even when pre-staging is feasible, memory footprints, schedule deviations, clock drift, and cancellation recovery consume latency budgets. Conversely, a scenario with ultra-fast actuators but infrequent reconfigurations can reasonably prioritize process isolation and maintainability.*
+Turn this table into an explicit division of work. Integrators should list the coordination, validation, translation, loading, and feedback still performed on each request, and explain why each must happen online. Targets for known communication phases can be generated in advance; necessary arbitration for conflicting shared resources still belongs in the budget. The controller continues to own global resource decisions, authorization, supervision, and reclamation. The fast path shortens execution for operations already permitted.
 
-Returning to the three dimensions: resource partitionability, interoperability requirements, software isolation needs, and underlying hardware concurrency shape the design space. A tight latency budget does not automatically imply choosing the most stripped-down implementation along all three axes; it may instead motivate hardware-level pre-loading and localized triggering.
+### Software-Path Latency Limits: Account for the Work Behind a Microsecond Budget
 
-For any specific system, the engineering sequence should be: first define when the application requires the path and what criteria constitute readiness; next isolate the coordination and execution steps that must execute online; finally synthesize an implementation that satisfies the latency budget. Verifying how many steps vendor APIs require, how many bytes configurations consume, how many channels actuators drive concurrently, and how many feedback iterations are needed must be an integral part of this design process.
+**Estimate software-path limits from required work and dependencies, and check implementations using full-path tail latency.** The local software interval fell from about 300 μs to about 140 μs above, showing that implementation and operating conditions still offer room for improvement. Those measurements describe the tested configurations; they do not establish a fixed limit for general-purpose CPUs.
 
-## Conclusion: Aligning Control Architectures with Device Speeds
-Returning to the initial disparity: when physical switching drops from 20 ms to 200 μs, a 5 ms serial control path leaves complete reconfiguration trapped in the millisecond domain. Translating device advances into faster application-level connectivity requires first separating planning from execution, and then systematically evaluating ① Controller Participation, ② Control Interface & Protocol, and ③ Device Execution Architecture, verifying whether low-level drivers and feedback loops can meet the budget.
+Microsecond communication provides a reference point: [eRPC](https://www.usenix.org/conference/nsdi19/presentation/kalia) reports a median RPC latency of about 2.3 μs for 32 B messages between two nodes under the same top-of-rack switch on a CX5 Ethernet platform. Taking **20 μs as a p99 budget to be validated for the whole software path** means accounting for parsing, validation, translation, scheduling, and necessary handoffs together. The 2.3 μs median illustrates the scale of communication cost; meeting a 20 μs p99 across the control path remains to be demonstrated.
 
-Materials from the OCP Fast OCS initiative already call for unified end-to-end metrics, and the Zero-Touch OCS presentation explicitly argued that "A common API stack is not enough," demanding shared service semantics and path validation. This article grounds that challenge in the execution architecture: which operations should move offline, which entities must participate in every reconfiguration, and can the remaining online work satisfy application latency budgets?
+Start by reducing repeated parsing and memory allocation, reusing completed target translations, and shortening thread and process handoffs. For parsing, local validation, and state transitions that must still run at trigger time and have stable semantics, evaluate moving execution into the device or FPGA, leaving policy and exception handling on the control CPU. Choose acceleration targets from the critical path, then verify benefits through complete calls, state consistency, and recovery. Across SDK, runtime, and device boundaries, continue tracing device calls and completion mechanisms. [Sato's optical switching tutorial](https://doi.org/10.1364/JOCN.495006) offers further reading.
 
-Our Tofino observations offer partial answers: reducing software overhead makes new paths observable earlier, differing device process layouts change non-device latency by hundreds of microseconds, and vendor runtime calls can dominate the remaining budget even after upper layers are streamlined. While complete validation on physical optical hardware and standalone controller benchmarks remains ongoing work, the architectural mandate is clear: **every time physical devices speed up by an order of magnitude, the control architecture must re-justify its latency budget. Otherwise, microsecond optical switches will continue to deliver millisecond reality.**
+### Device Vendors Should Deliver Control-Path Performance as a Product Capability
+
+**Report latency from receiving a connection target to programming completion and optical readiness alongside device switching specifications.** In the cross-host candidate, the SDK interval still represents about 57% of mean API latency, including the client, low-level RPC, vendor runtime, and waits inside calls. After upper-layer simplification, optimization must continue into the device API path. Vendors and integrators should jointly establish how many serial calls a complete target needs, what each call does, and which waits can be combined or removed.
+
+Device interfaces should accept complete connection targets or batch operations to reduce per-item host submissions and waits, while providing explicit completion notifications and necessary state readback. Vendors should also document configuration loading bandwidth, actuator concurrency, and feedback dependencies so integrators can determine the steps needed to apply a target. A successful reply must establish a clear fact: request reception, programming completion, and optical settling each permit different subsequent actions.
+
+For predictable communication phases, **split configuration preparation and activation into two interface stages**. Generate and load candidate states ahead of time, then activate them through a short command, local event, or scheduled trigger. Define candidate-state capacity, cancellation, and invalidation rules; scheduled activation also needs clock-offset and trigger-accuracy specifications. Preloading moves configuration transfer before the trigger, while device actuation and settling still need a budget. Vendors should implement and validate these capabilities so applications can use them.
+
+### Include Timing and Completion Semantics in Interoperability Requirements
+
+**Common models and interfaces should come with common timing metrics, completion semantics, and acceptance methods.** OCP materials already call for end-to-end metrics and shared service semantics. Communities such as OCP and ODCC should turn those goals into comparable, verifiable interface requirements.
+
+Following Figure 3, specifications should distinguish request reception, programming completion, optical settling, and application readiness, with defined start and end points for each measurement. The device reports programming and optical state; the system checks endpoint recovery and actual communication conditions to reach `T_ready`. Completion notifications, status queries, and result confirmation after timeouts should be defined around those facts.
+
+Performance reports should state the size of a connection update, load, concurrency, warmup and configuration preparation conditions, and the full path's mean and tail latency. This lets different protocols, runtimes, and devices be compared at the same endpoint and gives schedulers a basis for arranging the next communication phase. Measuring API replies, the first reply over the new path, and blackout separately above serves exactly this purpose.
+
+Return to the opening example: physical reconfiguration can fall from 20 ms to 200 μs while 5 ms of control leaves the full wait in milliseconds. **Faster devices must drive changes in control responsibilities, software paths, and device interfaces, with acceptance based on the full application-readiness budget.** Applications can use the speed of improved devices only when this whole path becomes faster.
 
 ## References and Reading Notes
-- [Mission Apollo: Landing Optical Circuit Switching at Datacenter Scale](https://arxiv.org/abs/2208.10041), Section 4.1, Figure 5, and Figure 8a: Palomar CPU, FPGA, high-voltage driver, and MEMS feedback control implementation. The 10–20 ms figure cited includes control software and mirror configuration, and cannot be treated solely as actuator motion time.
-- [Integrated electronic controller for dynamic self-configuration of photonic circuits](https://arxiv.org/abs/2501.09664v1), reading the arXiv v1 main text, methods, and supplementary materials, especially Figures 1, 3, and Supplementary Figure 5: multichannel MZI control, ~10 μs thermal actuator response, and ~10 ms convergence across a 4-stage mesh; evaluated on an adaptive beam coupler.
-- [General-purpose programmable photonic processor for advanced radiofrequency applications](https://www.nature.com/articles/s41467-024-45888-7), Nature Communications 15, 1563 (2024): Figure 2 and "The general-purpose photonic processor" section describe optical, electronic, and software layers, alongside driver-dominated 15–90 ms setting/readout latencies; not a commercial OCS benchmark.
-- [λλ: A Programming Language for Silicon Photonics](https://dl.acm.org/doi/10.1145/3789240.3829151) and [open-source compiler repository](https://github.com/vaibhavmehta1/LambdaLambda): verified abstract and codebase illustrate compilation and hardware mapping; compilation performance has not been verified against full texts and is not used to infer per-switch reconfiguration latency.
-- K. Sato, [Optical switching will innovate intra data center networks](https://doi.org/10.1364/JOCN.495006) (JOCN Invited Tutorial), J. Opt. Commun. Netw. 16(1), A1–A23 (2024): Section 7 outlines a 20 μs link-establishment target, FPGA 500 ns decision latency, and 8.36 μs measured link setup; cited here as an architectural baseline without extrapolating experimental conditions.
-- [iPronics ONE-32 Announcement](https://ipronics.com/ipronics-unveils-worlds-first-silicon-photonics-optical-circuit-switch-for-ai-driven-data-centers-optical-network-transformation/), 2025-03-31: vendor-reported `<300 μs` reconfiguration specification and May 2025 availability schedule. This is distinct from the `<30 ns` optical path propagation delay; device specifications have not been independently verified.
-- [iPronics ONE Product Page](https://ipronics.com/product/), accessed 2026-10-16: sub-millisecond reconfiguration claims and manufacturing roadmap; supplementary reading.
-- [iPronics Raises $125 Million to Scale Programmable Optical Networking for AI Data Centers](https://ipronics.com/ipronics-raises-125-million-to-scale-programmable-optical-networking-for-ai-data-centers/), 2026-09-02: company announcement of Series B funding with NVIDIA participation.
-- [Fast switching OCS for AI and Hyperscale Data Centers: Benefits, Technologies and Emerging Applications](https://drive.google.com/file/d/1G0o39qR0wZvvHHfMTyiAe2mB6j5HxelF/view), James Burch (Lumotive) and Vivek Sarathy (iPronics): Slides 3 and 5 discuss technology timescales, Slides 6–9 address use cases, and Slide 10 outlines end-to-end metrics and co-design requirements. Actuator timescales in technology roadmaps do not equate to full switch completion times.
-- [Optically-Accelerated AI Clusters Enabled by Interoperable Multi-Vendor OCSs: Use Cases and Opportunities](https://drive.google.com/file/d/1ahYwnygxq6vzFGNZWNrXO7r9fLLhCvg7/view), Iwan Kartawira (iPronics) and Kazuaki Ueda (KDDI), with contributions from Kazuya Anazawa (NTT): Slides 5–6 and 9–13 present CPO + OCS + SDN architecture, workload optimization, multi-vendor paths, and roadmap items; cited without inferring measured control latencies.
-- [Zero-Touch OCS Fabrics for AI Scale-Out Infrastructure at Hyperscale](https://drive.google.com/file/d/1c2YvZLrfVKRWOfFyc-rVGNZ9kGx56EaH/view), Kannan Raj and Michael DeMerchant: Slides 6–9 and 13 discuss shared models, service semantics, path verification, closed-loop changes, and consistency requirements.
-- [OCP Optical Circuit Switching Project](https://www.opencompute.org/community/optical-circuit-switching): verified project charter, SDN integration direction, and leadership roster; specific presentations cited for architecture and use cases.
-- [RFC 7950: The YANG 1.1 Data Modeling Language](https://www.rfc-editor.org/rfc/rfc7950.html), especially Sections 1 and 4: modeling language and representations of configuration, state, and RPC operations.
-- [gNMI Specification](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md), especially Sections 3.4.2 and 3.4.3: Set responses and transaction semantics; cited from online version accessed during this review.
-- [ReconfigNet-Sim: Simulation Principles and Boundaries](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/blob/main/docs/ocs-simulation-principles-and-boundaries.md), [Control Semantics](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/blob/main/docs/ocs-control-semantics.md), and [Agent Architecture](https://github.com/ZER0-Nu1L/ReconfigNet-Sim/blob/main/docs/ocs-agent-architecture.md): design abstractions and limitations of portable switch emulation.
 
-*The experimental data presented here represent a de-identified summary of empirical explorations; raw logs, deployment configurations, and source snapshots remain archived in private lab records. They provide architectural evidence rather than an open, independently reproducible benchmark; official interfaces in public repositories do not yet incorporate all experimental variants. Detailed sources, public citations, and follow-up validation requirements are maintained in `sources.md` in the writing workspace.*
+**Core research**
+
+- [Mission Apollo: Landing Optical Circuit Switching at Datacenter Scale](https://arxiv.org/abs/2208.10041), Section 4.1, Figures 5 and 8a: CPU, FPGA, high-voltage drive, and MEMS feedback control.
+- [Jupiter Evolving: Transforming Google's Datacenter Network via Optical Circuit Switches and Software-Defined Networking](https://research.google/pubs/jupiter-evolving-transforming-googles-datacenter-network-via-optical-circuit-switches-and-software-defined-networking/), SIGCOMM 2022: a production example of centralized SDN, traffic engineering, and topology engineering.
+- [$\lambda_{\lambda}$: A Programming Language for Silicon Photonics](https://dl.acm.org/doi/10.1145/3789240.3829151) and its [public compiler](https://github.com/vaibhavmehta1/LambdaLambda): program compilation and hardware mapping.
+- Anuj Kalia, Michael Kaminsky, David G. Andersen, [Datacenter RPCs can be General and Fast](https://www.usenix.org/conference/nsdi19/presentation/kalia), NSDI 2019, Section 6.1 and Table 2: median latency of 32 B RPCs on different platforms.
+- K. Sato, [Optical switching will innovate intra data center networks](https://doi.org/10.1364/JOCN.495006), JOCN 16(1), A1–A23 (2024): further reading on optical switching architectures.
+
+**Vendor and OCP community materials**
+
+- [iPronics ONE-32 announcement](https://ipronics.com/ipronics-unveils-worlds-first-silicon-photonics-optical-circuit-switch-for-ai-driven-data-centers-optical-network-transformation/), 2025-03-31: the vendor's <300 μs reconfiguration specification.
+- [iPronics Series B announcement](https://ipronics.com/ipronics-raises-125-million-to-scale-programmable-optical-networking-for-ai-data-centers/), 2026-09-02: $125 million, with NVIDIA participation.
+- [Fast switching OCS for AI and Hyperscale Data Centers: Benefits, Technologies and Emerging Applications](https://drive.google.com/file/d/1G0o39qR0wZvvHHfMTyiAe2mB6j5HxelF/view), James Burch, Vivek Sarathy, 2026 OCP Global Summit: fast OCS use cases, end-to-end metrics, and coordination requirements.
+- [Optically-Accelerated AI Clusters Enabled by Interoperable Multi-Vendor OCSs: Use Cases and Opportunities](https://drive.google.com/file/d/1ahYwnygxq6vzFGNZWNrXO7r9fLLhCvg7/view), Iwan Kartawira, Kazuaki Ueda, with Kazuya Anazawa, 2026 OCP Global Summit: CPO + OCS + SDN, workload optimization, and multi-vendor control.
+- [Zero-Touch OCS Fabrics for AI Scale-Out Infrastructure at Hyperscale](https://drive.google.com/file/d/1c2YvZLrfVKRWOfFyc-rVGNZ9kGx56EaH/view), Kannan Raj, Michael DeMerchant: common models, service semantics, path proof, and closed-loop validation.
+- [OCP Optical Circuit Switching](https://www.opencompute.org/community/optical-circuit-switching).
+
+**Switch software architectures**
+
+- [SONiC Architecture](https://github.com/sonic-net/SONiC/wiki/Architecture), the [foundation overview](https://sonicfoundation.dev/), [route performance discussions](https://github.com/sonic-net/SONiC/tree/master/doc/route-performance), and the [large data center route optimization proposal](https://github.com/sonic-net/SONiC/blob/master/doc/route-performance/strategies/large-scale-datacenter-clos-fabric.md): production use, software handoffs, and latency scales in specific scenarios.
+- [Stratum Component Overview](https://github.com/stratum/stratum#component-overview): the layers from P4Runtime/gNMI through switch and chip abstractions to SDKs.
+
+**Specifications**
+
+- [RFC 7950: YANG 1.1](https://www.rfc-editor.org/rfc/rfc7950.html), Sections 1 and 4.
+- [gNMI Specification](https://github.com/openconfig/reference/blob/master/rpc/gnmi/gnmi-specification.md), Sections 3.4.2 and 3.4.3: Set replies and transaction semantics.

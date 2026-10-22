@@ -71,9 +71,28 @@ With `npm run dev`, drafts are accessible directly at `/ReconfigNet-Sim/<lang>/p
 
 When both draft translations exist, the language switch opens the corresponding article; an unpaired draft links to the other language's home. The published OCS article lives at `/ReconfigNet-Sim/en/posts/ocs-control-arch/` and `/ReconfigNet-Sim/zh/posts/ocs-control-arch/`. Its Chinese figures live in `public/images/ocs-control-arch/`, and English figures in its `en/` subdirectory.
 
-Every article, including drafts, requires a nonempty `author` string. Use the author's name in the article's language: `Changbo Wu` in English and `吴昌博` in Chinese for Hello Optical World. The article template displays `By:` and `Date:` below the title and adds the Star prompt and a linked Shields.io GitHub stars badge after the body; do not duplicate these in the Markdown text. The badge loads its current count from Shields.io when the reader reaches the footer, following the presentation in UCCL's articles.
+Every article, including drafts, requires a nonempty `author` string. Use the author's name in the article's language: `Changbo Wu` in English and `吴昌博` in Chinese for Hello Optical World. The article template displays `By:` in English or `作者：` in Chinese and a localized publication date below the title, and adds the Star prompt and a linked Shields.io GitHub stars badge after the body; do not duplicate these in the Markdown text. The badge loads its current count from Shields.io when the reader reaches the footer, following the presentation in UCCL's articles.
+
+Keep `date` as the original publication date. After a substantive revision, optionally add `updated: "2026-10-21"` to that language's frontmatter. The article page then shows `Published … · Updated …` or `发布于 … · 更新于 …`, and includes `article:modified_time` metadata. Dates must be quoted, valid `YYYY-MM-DD` values, with `updated` no earlier than `date`; an update on the publication day shows only the publication date. English and Chinese may have different update dates. Omit `updated` until the article has actually been revised; file timestamps, Git commits and builds do not set it automatically. Home-page dates, ordering, RSS publication dates and BibTeX citations continue to use the original `date`.
+
+Set `citation: true` in a post's frontmatter to add a localized citation section after the body and before the Star prompt, with a link in the outline. It is enabled only for the OCS control architecture article in both languages. Both versions cite the matching English article's title, authors, publication date and production URL using BibTeX `@misc`; English author names use given-name surname order and commas between authors, for example `Changbo Wu, Zhuolong Yu`. A published post with citations requires a published English counterpart. The discussion contact is `wuchangbo@sii.edu.cn`. Omit `citation` or set it to `false` to leave the section out.
 
 The navigation includes a light/dark theme switch. First visits follow the system preference; a manual choice is saved in local storage under `reconfignet-sim-theme` and shared across pages and languages. Without JavaScript, the site follows the system theme. Print output uses the light palette.
+
+### Optional article hero
+
+Omit `hero` for articles without a header image. To add one below the subtitle, store the final assets in `public/images/<slug>/` and use paths relative to `public/`, without the site base prefix:
+
+```yaml
+hero:
+  light: images/ocs-control-arch/hero-light.webp
+  dark: images/ocs-control-arch/hero-dark.webp
+  alt: "Conceptual illustration of optical switching and its surrounding control layers."
+```
+
+`dark` is optional; without it, the light image appears in both themes. Both variants use the same localized `alt` text and dimensions. `width` and `height` default to 1536 and 640; set them to the actual dimensions for other sizes. The existing theme button switches the visible image immediately through the root `data-theme` attribute. Saved preferences, system changes and the JavaScript-free system fallback follow the same rules as the page; print always uses the light image. The OCS article uses C for light and the corrected D for dark, shared by both languages.
+
+For this 760px article column, a **2.4:1 banner (1536 × 640)** worked better than 16:9: its displayed height is about 317px instead of 428px, leaving more of the opening paragraph visible. On a 357px mobile column it is about 149px tall. Treat this as a composition starting point, not a required crop. Recompose the subject for the wide frame, preserve safe margins, and inspect it below the actual title and subtitle with the outline visible, in both languages, themes and screen sizes. Check connectors, beam counts and unintended duplicate strokes at full resolution as well as article size; each port in D should have one beam, with two independent paths throughout the input chain. Keep only the selected assets after review, export WebP for the site, and remove rejected candidates, intermediate renders, copied preview sites and generation environments.
 
 Markdown supports fenced code, tables, images, footnotes, and linked headings. Store final article images in `public/images/<slug>/` so both languages can share them. Reference these public images with the site base path, for example `![Topology diagram](/ReconfigNet-Sim/images/hello-optical-world/topology.svg)`. For links to another article, use its full site path including `/ReconfigNet-Sim/` and the reader's language. Do not use workstation paths or private testbed links.
 

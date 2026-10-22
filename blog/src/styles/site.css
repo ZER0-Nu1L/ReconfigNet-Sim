@@ -68,6 +68,15 @@ time { color: var(--muted); font-size: 13px; line-height: 1.8; }
 .article-meta p { margin: 0; }
 .article-meta time { font-size: inherit; line-height: inherit; }
 .article-header .lede { font-size: 17px; line-height: 1.65; }
+.article-hero { margin: 28px 0 0; }
+.article-hero img { display: block; width: 100%; height: auto; border-radius: 8px; }
+.article-hero .hero-dark { display: none; }
+:root[data-theme="dark"] .article-hero-themed .hero-light { display: none; }
+:root[data-theme="dark"] .article-hero-themed .hero-dark { display: block; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .article-hero-themed .hero-light { display: none; }
+  :root:not([data-theme]) .article-hero-themed .hero-dark { display: block; }
+}
 .prose { color: var(--body-ink); font-size: 16px; line-height: 1.75; overflow-wrap: anywhere; }
 .prose p { margin-block: 0 1em; }
 .prose h2 { margin: 1.6em 0 .6em; font-size: 26px; font-weight: 650; letter-spacing: -.02em; line-height: 1.4; }
@@ -137,6 +146,7 @@ time { color: var(--muted); font-size: 13px; line-height: 1.8; }
 .prose th, .prose td { border: 1px solid var(--line); padding: 10px 15px; text-align: left; min-width: 120px; }
 .prose th { background: var(--table-head); }
 .prose .footnotes { border-top: 1px solid var(--line); margin-top: 40px; font-size: 14px; }
+.article-citation { margin-top: 40px; }
 .article-footer { margin-top: 28px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .article-footer p { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin: 0; }
 .github-stars { display: inline-flex; align-items: center; flex-shrink: 0; text-decoration: none; }
@@ -167,6 +177,8 @@ html[lang="zh-CN"] h1 { letter-spacing: -.015em; }
   :root, :root[data-theme] { color-scheme: light; }
   .brand .mark-light { display: block !important; }
   .brand .mark-dark { display: none !important; }
+  .article-hero .hero-light { display: block !important; }
+  .article-hero .hero-dark { display: none !important; }
   nav, .outline-track, .article-outline, .skip-link, .back-link, .site-footer, .article-footer { display: none; }
   main { padding-block: 24px; }
   .prose pre, .prose table { white-space: pre-wrap; overflow-wrap: anywhere; }
