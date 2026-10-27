@@ -105,6 +105,46 @@ Once verified, submit
 under **Sitemaps**, then use **URL inspection** to request indexing for the
 English and Chinese article URLs. Google decides whether and when to index them.
 
+### Domain-root discovery
+
+The crawler file at <https://zer0-nu1l.github.io/robots.txt> belongs to the
+separate `ZER0-Nu1L/ZER0-Nu1L.github.io` repository. GitHub Pages publishes that
+repository's `master` branch from `/`; this project's `blog/public/` cannot
+provide a file at the domain root. Keep the root file in future deployments
+and in the source of any future site generator, even before a personal
+homepage is built:
+
+```text
+User-agent: *
+Allow: /
+
+Sitemap: https://zer0-nu1l.github.io/sitemap.xml
+Sitemap: https://zer0-nu1l.github.io/ReconfigNet-Sim/sitemap-index.xml
+```
+
+The first sitemap retains discovery of the existing user-site pages; the
+second points to this blog. A missing `robots.txt` returning 404 does not block
+crawling. Adding these declarations provides another discovery path; it does
+not guarantee indexing or establish the cause of a Search Console fetch error.
+Do not add a project-path `robots.txt` as a substitute for the domain-root file.
+
+After publishing a change to the user-site repository, verify that the root
+file returns HTTP 200 with the expected plain text and no redirect. Check that
+both sitemap URLs return valid XML and that the blog's child sitemap includes
+both language versions of the published articles. Record the PR, merge commit,
+Pages run and HTTP verification outside the public repositories. To roll back,
+revert the relevant commit through the repository's normal PR process.
+
+Then resubmit the blog sitemap once in Search Console and request indexing for
+the English and Chinese blog homepages. These Google-account actions are manual;
+repository deployment does not submit them. Observe sitemap status and formal
+crawl timestamps rather than repeatedly requesting the same article. If the
+error persists, inspect the specific fetch error and use a live URL inspection
+of the sitemap to distinguish access problems from report-processing problems.
+
+When the planned personal homepage is built, add visible HTML links to the blog
+and its articles. Homepage construction and navigation changes are deferred.
+
 ## Diagnose redirects to an old domain
 
 A custom domain on the user-site repository can redirect every project site
