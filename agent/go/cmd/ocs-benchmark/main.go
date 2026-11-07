@@ -14,6 +14,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,20 +27,22 @@ import (
 )
 
 type options struct {
-	RawSamples   bool
-	Compact      bool
-	RuntimeLabel string
-	GRPCTarget   string
-	HTTPTarget   string
-	LegacyHTTP   bool
-	Protocols    []string
-	Operations   []string
-	Strategies   []string
-	Transport    string
-	Warmup       int
-	Iterations   int
-	Concurrency  int
-	Timeout      time.Duration
+	ExpectedInitialPI []uint32
+	AlternatePI       []uint32
+	RawSamples        bool
+	Compact           bool
+	RuntimeLabel      string
+	GRPCTarget        string
+	HTTPTarget        string
+	LegacyHTTP        bool
+	Protocols         []string
+	Operations        []string
+	Strategies        []string
+	Transport         string
+	Warmup            int
+	Iterations        int
+	Concurrency       int
+	Timeout           time.Duration
 }
 
 type sample struct {
@@ -118,14 +121,17 @@ type runResult struct {
 type output struct {
 	RuntimeLabel string `json:"runtime_label"`
 	Benchmark    struct {
-		Protocols   []string `json:"protocol_order"`
-		Operations  []string `json:"operations"`
-		Strategies  []string `json:"strategies"`
-		Transport   string   `json:"transport"`
-		Warmup      int      `json:"warmup"`
-		Iterations  int      `json:"iterations"`
-		Concurrency int      `json:"concurrency"`
-		Timeout     float64  `json:"timeout_seconds"`
+		ExpectedInitialPI []uint32 `json:"expected_initial_pi,omitempty"`
+		AlternatePI       []uint32 `json:"alternate_pi,omitempty"`
+		Compact           bool     `json:"compact"`
+		Protocols         []string `json:"protocol_order"`
+		Operations        []string `json:"operations"`
+		Strategies        []string `json:"strategies"`
+		Transport         string   `json:"transport"`
+		Warmup            int      `json:"warmup"`
+		Iterations        int      `json:"iterations"`
+		Concurrency       int      `json:"concurrency"`
+		Timeout           float64  `json:"timeout_seconds"`
 	} `json:"benchmark"`
 	ClientRuntime map[string]string `json:"client_runtime"`
 	GRPCTarget    string            `json:"grpc_target"`
@@ -602,6 +608,9 @@ func main() {
 }
 
 func runLegacyHTTP(ctx context.Context, options options) (output, error) {
+	if len(options.ExpectedInitialPI) > 0 || len(options.AlternatePI) > 0 {
+		return output{}, fmt.Errorf("explicit mapping scope is supported only by the maintained Agent API")
+	}
 	client := newLegacyHTTPClient(options.HTTPTarget, options.Concurrency)
 	defer client.Close()
 	requestContext, cancel := context.WithTimeout(ctx, options.Timeout)
@@ -764,6 +773,9 @@ func run(ctx context.Context, options options) (output, error) {
 	if err := validatePermutation(initialSample.Permutation); err != nil {
 		return output{}, err
 	}
+	if err := validateMappingScope(initialSample.Permutation, options); err != nil {
+		return output{}, err
+	}
 	requestContext, cancel = context.WithTimeout(ctx, options.Timeout)
 	backend, err := discovery.Runtime(requestContext)
 	cancel()
@@ -793,6 +805,9 @@ func run(ctx context.Context, options options) (output, error) {
 	result.Benchmark.Iterations = options.Iterations
 	result.Benchmark.Concurrency = options.Concurrency
 	result.Benchmark.Timeout = options.Timeout.Seconds()
+	result.Benchmark.ExpectedInitialPI = slices.Clone(options.ExpectedInitialPI)
+	result.Benchmark.AlternatePI = slices.Clone(options.AlternatePI)
+	result.Benchmark.Compact = options.Compact
 
 	for _, protocol := range options.Protocols {
 		client, err := makeClient(protocol, options)
@@ -827,6 +842,18 @@ func runProtocol(
 	initial []uint32,
 	options options,
 ) ([]runResult, error) {
+	if len(options.ExpectedInitialPI) > 0 {
+		// Recheck after acquiring the lease, before even a setup/no-op write.
+		requestContext, cancel := context.WithTimeout(ctx, options.Timeout)
+		current, err := client.Permutation(requestContext)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		if err := validateMappingScope(current.Permutation, options); err != nil {
+			return nil, err
+		}
+	}
 	runs := make([]runResult, 0)
 	if slices.Contains(options.Operations, "read") {
 		run, err := benchmarkRead(ctx, client, protocol, options)
@@ -886,19 +913,29 @@ func benchmarkApply(
 	strategy string,
 	options options,
 ) (runResult, error) {
+	if err := validateMappingScope(initial, options); err != nil {
+		return runResult{}, err
+	}
 	if err := applyOnce(ctx, client, initial, strategy, options); err != nil {
 		return runResult{}, err
 	}
-	allMappings := matchingPermutations(len(initial))
-	candidates := make([][]uint32, 0, len(allMappings)-1)
-	for _, candidate := range allMappings {
-		if !slices.Equal(candidate, initial) {
-			candidates = append(candidates, candidate)
+	var candidates [][]uint32
+	if len(options.AlternatePI) > 0 {
+		candidates = [][]uint32{slices.Clone(options.AlternatePI), slices.Clone(initial)}
+	} else {
+		allMappings := matchingPermutations(len(initial))
+		for _, candidate := range allMappings {
+			if !slices.Equal(candidate, initial) {
+				candidates = append(candidates, candidate)
+			}
 		}
 	}
 	if operation == "noop" {
 		candidates = [][]uint32{initial}
 	} else if options.Concurrency == 1 {
+		if len(candidates) == 0 {
+			return runResult{}, fmt.Errorf("write benchmark requires a distinct matching")
+		}
 		candidates = [][]uint32{candidates[0], initial}
 	} else if options.Iterations > len(candidates) {
 		return runResult{}, fmt.Errorf(
@@ -916,9 +953,13 @@ func benchmarkApply(
 	samples, elapsed, err := parallel(options, func(index int) (sample, error) {
 		requestContext, cancel := context.WithTimeout(ctx, options.Timeout)
 		defer cancel()
-		return client.Apply(
+		value, err := client.Apply(
 			requestContext, candidates[index%len(candidates)],
 			strategy, options.Transport)
+		if len(options.AlternatePI) > 0 {
+			value.Permutation = slices.Clone(candidates[index%len(candidates)])
+		}
+		return value, err
 	})
 	if err != nil {
 		options.RawSamples = true
@@ -1239,6 +1280,46 @@ func validatePermutation(permutation []uint32) error {
 	return nil
 }
 
+func validateMappingScope(initial []uint32, options options) error {
+	if len(options.ExpectedInitialPI) == 0 && len(options.AlternatePI) == 0 {
+		return nil
+	}
+	if options.LegacyHTTP || options.Concurrency != 1 ||
+		!slices.Equal(options.Operations, []string{"write"}) {
+		return fmt.Errorf("explicit mapping scope requires maintained API, operation=write and concurrency=1")
+	}
+	for _, pi := range [][]uint32{options.ExpectedInitialPI, options.AlternatePI} {
+		if err := validatePermutation(pi); err != nil {
+			return fmt.Errorf("both --expected-initial-pi and --alternate-pi must be valid matchings: %w", err)
+		}
+		if len(pi) != len(initial) {
+			return fmt.Errorf("scoped matching size differs from observed device mapping")
+		}
+	}
+	if !slices.Equal(initial, options.ExpectedInitialPI) {
+		return fmt.Errorf("observed initial mapping differs from --expected-initial-pi; no write attempted")
+	}
+	if slices.Equal(initial, options.AlternatePI) {
+		return fmt.Errorf("--alternate-pi must differ from the initial mapping")
+	}
+	return nil
+}
+
+func parsePI(value string) ([]uint32, error) {
+	if value == "" {
+		return nil, nil
+	}
+	var pi []uint32
+	for item := range strings.SplitSeq(value, ",") {
+		port, err := strconv.ParseUint(strings.TrimSpace(item), 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid matching port %q: %w", item, err)
+		}
+		pi = append(pi, uint32(port))
+	}
+	return pi, validatePermutation(pi)
+}
+
 func makeClient(protocol string, options options) (benchmarkClient, error) {
 	if protocol == "grpc" {
 		c, err := newGRPCClient(options.GRPCTarget)
@@ -1254,6 +1335,8 @@ func makeClient(protocol string, options options) (benchmarkClient, error) {
 }
 
 func parseOptions() (options, error) {
+	expectedInitial := flag.String("expected-initial-pi", "", "require this comma-separated initial matching before scoped writes")
+	alternate := flag.String("alternate-pi", "", "alternate only this matching with --expected-initial-pi; requires write and concurrency=1")
 	rawSamples := flag.Bool("raw-samples", false, "include per-request correlated timing samples")
 	compact := flag.Bool("compact", false, "request compact ApplyBatch replies")
 	runtimeLabel := flag.String("runtime", "unspecified", "agent runtime label")
@@ -1290,7 +1373,16 @@ func parseOptions() (options, error) {
 	if transportName != "SEQUENTIAL" && transportName != "NATIVE_BATCH" {
 		return options{}, fmt.Errorf("transport must be sequential or native-batch")
 	}
-	return options{
+	expectedPI, err := parsePI(*expectedInitial)
+	if err != nil {
+		return options{}, err
+	}
+	alternatePI, err := parsePI(*alternate)
+	if err != nil {
+		return options{}, err
+	}
+	parsed := options{
+		ExpectedInitialPI: expectedPI, AlternatePI: alternatePI,
 		RawSamples: *rawSamples, Compact: *compact,
 		RuntimeLabel: *runtimeLabel,
 		GRPCTarget:   *grpcTarget,
@@ -1304,7 +1396,11 @@ func parseOptions() (options, error) {
 		Iterations:   *iterations,
 		Concurrency:  *concurrency,
 		Timeout:      *timeout,
-	}, nil
+	}
+	if err := validateMappingScope(expectedPI, parsed); err != nil {
+		return options{}, err
+	}
+	return parsed, nil
 }
 
 func expand(value, all string, choices []string) ([]string, error) {
