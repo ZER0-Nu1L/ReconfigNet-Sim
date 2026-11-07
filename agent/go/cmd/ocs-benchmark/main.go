@@ -27,23 +27,24 @@ import (
 )
 
 type options struct {
-	ExpectedInitialPI []uint32
-	AlternatePI       []uint32
-	RawSamples        bool
-	Compact           bool
-	Diagnostic        bool
-	RuntimeLabel      string
-	GRPCTarget        string
-	HTTPTarget        string
-	LegacyHTTP        bool
-	Protocols         []string
-	Operations        []string
-	Strategies        []string
-	Transport         string
-	Warmup            int
-	Iterations        int
-	Concurrency       int
-	Timeout           time.Duration
+	ExpectedInitialPI    []uint32
+	AlternatePI          []uint32
+	RawSamples           bool
+	Compact              bool
+	Diagnostic           bool
+	GRPCWriteBufferBytes int
+	RuntimeLabel         string
+	GRPCTarget           string
+	HTTPTarget           string
+	LegacyHTTP           bool
+	Protocols            []string
+	Operations           []string
+	Strategies           []string
+	Transport            string
+	Warmup               int
+	Iterations           int
+	Concurrency          int
+	Timeout              time.Duration
 }
 
 type sample struct {
@@ -123,18 +124,19 @@ type runResult struct {
 type output struct {
 	RuntimeLabel string `json:"runtime_label"`
 	Benchmark    struct {
-		ExpectedInitialPI []uint32 `json:"expected_initial_pi,omitempty"`
-		AlternatePI       []uint32 `json:"alternate_pi,omitempty"`
-		Diagnostic        bool     `json:"diagnostic"`
-		Compact           bool     `json:"compact"`
-		Protocols         []string `json:"protocol_order"`
-		Operations        []string `json:"operations"`
-		Strategies        []string `json:"strategies"`
-		Transport         string   `json:"transport"`
-		Warmup            int      `json:"warmup"`
-		Iterations        int      `json:"iterations"`
-		Concurrency       int      `json:"concurrency"`
-		Timeout           float64  `json:"timeout_seconds"`
+		ExpectedInitialPI    []uint32 `json:"expected_initial_pi,omitempty"`
+		AlternatePI          []uint32 `json:"alternate_pi,omitempty"`
+		GRPCWriteBufferBytes int      `json:"grpc_write_buffer_bytes"`
+		Diagnostic           bool     `json:"diagnostic"`
+		Compact              bool     `json:"compact"`
+		Protocols            []string `json:"protocol_order"`
+		Operations           []string `json:"operations"`
+		Strategies           []string `json:"strategies"`
+		Transport            string   `json:"transport"`
+		Warmup               int      `json:"warmup"`
+		Iterations           int      `json:"iterations"`
+		Concurrency          int      `json:"concurrency"`
+		Timeout              float64  `json:"timeout_seconds"`
 	} `json:"benchmark"`
 	ClientRuntime map[string]string `json:"client_runtime"`
 	GRPCTarget    string            `json:"grpc_target"`
@@ -829,6 +831,7 @@ func run(ctx context.Context, options options) (output, error) {
 	result.Benchmark.AlternatePI = slices.Clone(options.AlternatePI)
 	result.Benchmark.Compact = options.Compact
 	result.Benchmark.Diagnostic = options.Diagnostic
+	result.Benchmark.GRPCWriteBufferBytes = options.GRPCWriteBufferBytes
 
 	for _, protocol := range options.Protocols {
 		client, err := makeClient(protocol, options)
@@ -1343,7 +1346,13 @@ func parsePI(value string) ([]uint32, error) {
 
 func makeClient(protocol string, options options) (benchmarkClient, error) {
 	if protocol == "grpc" {
-		c, err := newGRPCClient(options.GRPCTarget)
+		var c *grpcClient
+		var err error
+		if options.GRPCWriteBufferBytes >= 0 {
+			c, err = newBufferedGRPCClient(options.GRPCTarget, options.GRPCWriteBufferBytes)
+		} else {
+			c, err = newGRPCClient(options.GRPCTarget)
+		}
 		if err == nil {
 			c.compact = options.Compact
 			c.diagnostic = options.Diagnostic
@@ -1360,6 +1369,7 @@ func parseOptions() (options, error) {
 	expectedInitial := flag.String("expected-initial-pi", "", "require this comma-separated initial matching before scoped writes")
 	alternate := flag.String("alternate-pi", "", "alternate only this matching with --expected-initial-pi; requires write and concurrency=1")
 	rawSamples := flag.Bool("raw-samples", false, "include per-request correlated timing samples")
+	writeBuffer := flag.Int("grpc-write-buffer-bytes", -1, "client gRPC write buffer; -1 keeps library default, 0 disables buffering")
 	diagnostic := flag.Bool("diagnostic", false, "opt-in gRPC handler/Core and client codec timing; adds trailers and measurement overhead")
 	compact := flag.Bool("compact", false, "request compact ApplyBatch replies")
 	runtimeLabel := flag.String("runtime", "unspecified", "agent runtime label")
@@ -1406,7 +1416,7 @@ func parseOptions() (options, error) {
 	}
 	parsed := options{
 		ExpectedInitialPI: expectedPI, AlternatePI: alternatePI,
-		RawSamples: *rawSamples, Compact: *compact, Diagnostic: *diagnostic,
+		RawSamples: *rawSamples, Compact: *compact, Diagnostic: *diagnostic, GRPCWriteBufferBytes: *writeBuffer,
 		RuntimeLabel: *runtimeLabel,
 		GRPCTarget:   *grpcTarget,
 		HTTPTarget:   *httpTarget,
@@ -1419,6 +1429,12 @@ func parseOptions() (options, error) {
 		Iterations:   *iterations,
 		Concurrency:  *concurrency,
 		Timeout:      *timeout,
+	}
+	if parsed.GRPCWriteBufferBytes < -1 {
+		return options{}, fmt.Errorf("grpc-write-buffer-bytes must be >= -1")
+	}
+	if parsed.GRPCWriteBufferBytes >= 0 && (len(parsed.Protocols) != 1 || parsed.Protocols[0] != "grpc" || strings.HasPrefix(parsed.GRPCTarget, "framed")) {
+		return options{}, fmt.Errorf("grpc-write-buffer-bytes requires gRPC")
 	}
 	if parsed.Diagnostic && (parsed.Concurrency != 1 || len(parsed.Protocols) != 1 || parsed.Protocols[0] != "grpc" || strings.HasPrefix(parsed.GRPCTarget, "framed")) {
 		return options{}, fmt.Errorf("diagnostic requires gRPC and concurrency=1")

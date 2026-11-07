@@ -24,3 +24,8 @@ Diagnostics keep lease/revision checks, synchronous completion and failure-stop
 behavior. A successful write with absent diagnostic trailers stops the benchmark;
 inspect state before attempting another write. The framed API does not transport
 these diagnostic trailers. Do not treat its absence as a zero-duration phase.
+
+The benchmark also accepts `--grpc-write-buffer-bytes=0` to compare client-side
+HTTP/2 write buffering against `-1` (the library default). This affects only the
+benchmark's persistent gRPC connection; it neither changes the Agent nor the
+BFRT connection. Measure it against an otherwise identical uninstrumented run.
