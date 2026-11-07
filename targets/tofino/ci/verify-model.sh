@@ -98,6 +98,7 @@ fi
 
 model_pid=
 switchd_pid=
+agent_pid=
 
 check_runtime_processes() {
     local phase=$1
@@ -130,13 +131,13 @@ wait_for_tcp_port() {
 cleanup() {
     local pid
     set +e
-    for pid in "$switchd_pid" "$model_pid"; do
+    for pid in "$agent_pid" "$switchd_pid" "$model_pid"; do
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             kill -TERM -- "-$pid" 2>/dev/null || true
         fi
     done
     sleep 2
-    for pid in "$switchd_pid" "$model_pid"; do
+    for pid in "$agent_pid" "$switchd_pid" "$model_pid"; do
         if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             kill -KILL -- "-$pid" 2>/dev/null || true
         fi
@@ -337,4 +338,68 @@ for field, expected_value in (
                 field, expected_value, actual_value))
 PY
 
-echo "Tofino model and project PTF verification passed for $program_name."
+# Exercise the maintained Go Agent through its northbound API, rather than
+# substituting a standalone BFRT writer for the service under qualification.
+: "${OCS_GO_AGENT_BIN:?mount a statically built ocs-go-agent for the full model gate}"
+: "${OCS_CONTROL_BIN:?mount a statically built ocs-control for the full model gate}"
+go_config="$artifact_root/go-agent.json"
+python3 - "$repository_root" "$go_config" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+config = json.loads((root / 'agent/configs/tofino/go-direct-bfrt.example.json').read_text())
+config['model_file'] = str(root / 'agent/configs/tofino/model-6port.yaml')
+config['capability_profile_file'] = str(root / 'agent/configs/tofino/capabilities.yaml')
+config['device']['consistency_mode'] = 'CACHED_SYNC'
+config['backend']['timeout_seconds'] = 20
+config['backend']['ownership_lock_file'] = '/tmp/ocs-go-model-owner.lock'
+Path(sys.argv[2]).write_text(json.dumps(config, indent=2) + '\n')
+PY
+
+setsid "$OCS_GO_AGENT_BIN" --config "$go_config" >"$artifact_root/go-agent.log" 2>&1 &
+agent_pid=$!
+wait_for_tcp_port 9339 "Go Agent API" 60
+"$OCS_CONTROL_BIN" --target 127.0.0.1:9339 --operation get >"$artifact_root/go-before.json"
+
+# A second instance must fail on ownership before opening another writer.
+if "$OCS_GO_AGENT_BIN" --config "$go_config" >"$artifact_root/go-competing-owner.log" 2>&1; then
+    echo "Go Agent accepted a competing writer" >&2
+    exit 1
+fi
+grep -Fq 'another Agent owns the device lock' "$artifact_root/go-competing-owner.log"
+
+ptf_command[-1]="timing_file='$artifact_root/go-ptf-timing.json';go_control='$OCS_CONTROL_BIN'"
+(
+    cd "$ptf_runtime_dir"
+    PYTHONPATH="$repository_root/agent/python:$repository_root/targets/tofino/runtime:$repository_root" \
+        "${ptf_command[@]}"
+) 2>&1 | tee "$artifact_root/go-ptf.log"
+
+"$OCS_CONTROL_BIN" --target 127.0.0.1:9339 --operation recover >"$artifact_root/go-recovery.json"
+"$OCS_CONTROL_BIN" --target 127.0.0.1:9339 --operation get >"$artifact_root/go-after.json"
+kill -TERM -- "-$agent_pid"
+wait "$agent_pid"
+agent_pid=
+setsid "$OCS_GO_AGENT_BIN" --config "$go_config" >"$artifact_root/go-restart.log" 2>&1 &
+agent_pid=$!
+wait_for_tcp_port 9339 "restarted Go Agent API" 60
+"$OCS_CONTROL_BIN" --target 127.0.0.1:9339 --operation get >"$artifact_root/go-restarted.json"
+python3 - "$artifact_root" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+for name in ('go-before.json', 'go-after.json', 'go-restarted.json'):
+    reply = json.loads((root / name).read_text())['reply']
+    assert reply['permutation']['pi'] == [6, 3, 2, 5, 4, 1], name
+    assert reply['state']['device_state']['cache_status'] == 'READY', name
+evidence = json.loads((root / 'go-ptf-timing.json').read_text())
+assert evidence['reconfiguration_timing']['device_write_requests'] == 1
+assert evidence['reconfiguration_timing']['write_verification'] == 'HARDWARE_READBACK'
+assert evidence['restored_readback'] == evidence['initial_readback']
+PY
+check_runtime_processes "after Go Agent restart and readback"
+echo "Tofino model, Python backend and Go Agent PTF verification passed for $program_name."

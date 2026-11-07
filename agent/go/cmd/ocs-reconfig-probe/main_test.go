@@ -39,3 +39,18 @@ func TestParsePI(t *testing.T) {
 		t.Fatal("odd pi accepted")
 	}
 }
+
+func TestLateOldReplyDoesNotRewriteBlackoutBoundary(t *testing.T) {
+	tracker := &sampleTracker{}
+	base := time.Unix(0, 0)
+	tracker.reset(7)
+	tracker.observe(echoEvent{sampleID: 7, target: "old", received: base})
+	tracker.startRequest(base.Add(time.Millisecond))
+	tracker.observe(echoEvent{sampleID: 7, target: "old", received: base.Add(2 * time.Millisecond)})
+	tracker.observe(echoEvent{sampleID: 7, target: "new", received: base.Add(3 * time.Millisecond)})
+	tracker.observe(echoEvent{sampleID: 7, target: "old", received: base.Add(4 * time.Millisecond)})
+	snapshot := tracker.snapshot()
+	if got := snapshot.firstNew.Sub(snapshot.lastOld); got != time.Millisecond {
+		t.Fatalf("late reply changed blackout to %s", got)
+	}
+}

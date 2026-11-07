@@ -1,0 +1,46 @@
+{
+  "mode": "l3",
+  "deployment_profile": "go-direct-bfrt",
+  "model_file": "model-6port.yaml",
+  "capability_profile_file": "capabilities.yaml",
+  "enable_debugger": false,
+  "grpc_api": {
+    "host": "127.0.0.1",
+    "port": 9339
+  },
+  "framed_api": {
+    "host": "127.0.0.1",
+    "port": 9340
+  },
+  "device": {
+    "consistency_mode": "CACHED_ACK"
+  },
+  "startup_policy": "REQUIRE_MATCH",
+  "control": {
+    "lease_seconds": 30,
+    "reconcile_interval_seconds": 30
+  },
+  "backend": {
+    "type": "bfrt",
+    "target": "127.0.0.1:50052",
+    "client_id": 1,
+    "device_id": 0,
+    "pipe_id": 65535,
+    "p4_name": "ocs",
+    "table_name": "SwitchIngress.ocs_mapping",
+    "action_name": "SwitchIngress.permit_ocs",
+    "ingress_field": "ig_intr_md.ingress_port",
+    "egress_field": "ig_intr_tm_md.ucast_egress_port",
+    "logical_to_device": {
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6
+    },
+    "timeout_seconds": 2,
+    "ownership_lock_file": "/tmp/ocs-agent-bfrt.lock",
+    "two_phase": false
+  }
+}

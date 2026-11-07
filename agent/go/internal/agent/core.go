@@ -138,7 +138,7 @@ type ConnectionOperation struct {
 
 type Agent struct {
 	inventory               model.Inventory
-	backend                 *backend.Client
+	backend                 backend.Device
 	profile                 string
 	capabilities            backend.Capabilities
 	consistencyMode         string
@@ -170,7 +170,7 @@ func New(
 	ctx context.Context,
 	inventory model.Inventory,
 	initial model.ConnectionSet,
-	deviceBackend *backend.Client,
+	deviceBackend backend.Device,
 	profile string,
 	consistencyMode string,
 	leaseDuration time.Duration,
@@ -719,7 +719,7 @@ func (a *Agent) backendErrorLocked(requestID uint64, timing Timing, err error) e
 	a.state.lastError = err.Error()
 	apiError := apierr.New(
 		codes.Unavailable,
-		"device worker is unavailable; device state is unknown",
+		"device backend is unavailable; device state is unknown",
 		map[string]any{"backend": a.capabilities.Backend})
 	apiError.RequestID = requestID
 	apiError.Timing = timing

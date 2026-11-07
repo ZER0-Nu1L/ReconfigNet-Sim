@@ -1,7 +1,7 @@
 # OCS Agent 当前架构
 
 > [!IMPORTANT]
-> 当前只支持 `python-monolith-http-direct` 与 `go-split-grpc` 两个部署 profile。它们是面向不同目标的两个 Pareto frontier，不是可以任意排列组合的 runtime matrix。
+> 低延迟实验基线使用 `go-direct-bfrt`：独立 Go launcher 启动同进程 Agent 与 BFRT 适配，默认一次混合提交，gRPC／轻量接口共享控制权。该实现已有历史跨机实测，各现场迁移仍需按版本重新验收。原有 `python-monolith-http-direct` 与 `go-split-grpc` 保留兼容与回退；Python launcher 的配置继续适用。接入与恢复约定见 [Go 直连设备服务](./ocs-go-direct.md)。
 
 - 状态：当前设计基线
 - 日期：2026-08-27

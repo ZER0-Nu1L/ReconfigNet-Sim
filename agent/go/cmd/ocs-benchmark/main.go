@@ -16,15 +16,18 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	ocsclient "github.com/reconfig-net-sim/ocs-go-agent/client"
 	ocsv1 "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
 type options struct {
+	RawSamples   bool
+	Compact      bool
 	RuntimeLabel string
 	GRPCTarget   string
 	HTTPTarget   string
@@ -40,6 +43,11 @@ type options struct {
 }
 
 type sample struct {
+	Error                  string `json:"error,omitempty"`
+	ClientQueueUS          uint64
+	SouthboundQueueUS      uint64
+	RequestID              uint64
+	Revision               uint64
 	LatencyUS              uint64
 	ClientPrepareUS        uint64
 	ClientRPCUS            uint64
@@ -72,6 +80,9 @@ type summary struct {
 }
 
 type runResult struct {
+	Samples                 []sample           `json:"samples,omitempty"`
+	ClientQueueUS           *summary           `json:"client_queue_wait_us,omitempty"`
+	SouthboundQueueUS       *summary           `json:"southbound_queue_wait_us,omitempty"`
 	Protocol                string             `json:"protocol"`
 	Operation               string             `json:"operation"`
 	Strategy                string             `json:"strategy,omitempty"`
@@ -134,12 +145,16 @@ type benchmarkClient interface {
 }
 
 type grpcClient struct {
-	connection *grpc.ClientConn
-	client     ocsv1.OcsOperationsClient
-	mu         sync.Mutex
-	leaseToken string
-	revision   uint64
+	connection   ocsclient.Connection
+	compact      bool
+	client       ocsv1.OcsOperationsClient
+	mu           sync.Mutex
+	leaseToken   string
+	revision     uint64
+	writeFailure error
 }
+
+var errWriteClientStopped = errors.New("write not attempted: client stopped after earlier failure")
 
 func (c *grpcClient) Acquire(ctx context.Context) error {
 	lease, err := c.client.AcquireControl(ctx, &ocsv1.AcquireControlRequest{
@@ -154,8 +169,7 @@ func (c *grpcClient) Acquire(ctx context.Context) error {
 }
 
 func newGRPCClient(target string) (*grpcClient, error) {
-	connection, err := grpc.NewClient(
-		target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := ocsclient.Dial(context.Background(), target)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +226,11 @@ func (c *grpcClient) Apply(
 	totalStarted := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.writeFailure != nil {
+		return sample{}, fmt.Errorf("%w: %v", errWriteClientStopped, c.writeFailure)
+	}
 	prepareStarted := time.Now()
+	clientQueueUS := uint64(time.Since(totalStarted).Microseconds())
 	request := &ocsv1.ApplyBatchRequest{
 		Intent: &ocsv1.ApplyBatchRequest_Permutation{
 			Permutation: &ocsv1.Permutation{Pi: permutation},
@@ -224,16 +242,22 @@ func (c *grpcClient) Apply(
 	}
 	prepareUS := uint64(time.Since(prepareStarted).Microseconds())
 	rpcStarted := time.Now()
-	response, err := c.client.ApplyBatch(
-		metadata.AppendToOutgoingContext(ctx,
-			"x-ocs-control-lease", c.leaseToken), request)
+	if c.compact {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-ocs-compact-reply", "true")
+	}
+	response, err := c.client.ApplyBatch(metadata.AppendToOutgoingContext(ctx, "x-ocs-control-lease", c.leaseToken), request)
 	if err != nil {
+		c.writeFailure = err
 		return sample{}, err
 	}
+
 	rpcUS := uint64(time.Since(rpcStarted).Microseconds())
 	c.revision = response.GetState().GetRevision()
 	timing := response.GetTiming()
 	return sample{
+		ClientQueueUS:     clientQueueUS,
+		SouthboundQueueUS: timing.GetSouthboundQueueWaitUs(),
+		RequestID:         response.GetRequestId(), Revision: response.GetState().GetRevision(),
 		LatencyUS:              uint64(time.Since(totalStarted).Microseconds()),
 		ClientPrepareUS:        prepareUS,
 		ClientRPCUS:            rpcUS,
@@ -257,12 +281,13 @@ func (c *grpcClient) Apply(
 }
 
 type httpClient struct {
-	baseURL    string
-	client     *http.Client
-	close      func()
-	mu         sync.Mutex
-	leaseToken string
-	revision   uint64
+	baseURL      string
+	client       *http.Client
+	close        func()
+	mu           sync.Mutex
+	leaseToken   string
+	revision     uint64
+	writeFailure error
 }
 
 func (c *httpClient) Acquire(ctx context.Context) error {
@@ -347,7 +372,11 @@ func (c *httpClient) Apply(
 	totalStarted := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.writeFailure != nil {
+		return sample{}, fmt.Errorf("%w: %v", errWriteClientStopped, c.writeFailure)
+	}
 	prepareStarted := time.Now()
+	clientQueueUS := uint64(time.Since(totalStarted).Microseconds())
 	payload := map[string]any{
 		"new_pi":    permutation,
 		"strategy":  strategy,
@@ -367,6 +396,7 @@ func (c *httpClient) Apply(
 		Result   string `json:"result"`
 		Revision uint64 `json:"revision"`
 		Timing   struct {
+			SouthboundQueueUS      uint64 `json:"southbound_queue_wait_us"`
 			ServerUS               uint64 `json:"server_total_us"`
 			QueueUS                uint64 `json:"queue_wait_us"`
 			ValidationUS           uint64 `json:"validation_us"`
@@ -386,11 +416,14 @@ func (c *httpClient) Apply(
 	}
 	rpcStarted := time.Now()
 	if err := c.call(ctx, http.MethodPost, "/ocs_mapping", encoded, headers, &response); err != nil {
+		c.writeFailure = err
 		return sample{}, err
 	}
 	rpcUS := uint64(time.Since(rpcStarted).Microseconds())
 	c.revision = response.Revision
 	return sample{
+		ClientQueueUS:          clientQueueUS,
+		SouthboundQueueUS:      response.Timing.SouthboundQueueUS,
 		LatencyUS:              uint64(time.Since(totalStarted).Microseconds()),
 		ClientPrepareUS:        prepareUS,
 		ClientRPCUS:            rpcUS,
@@ -558,12 +591,12 @@ func main() {
 	} else {
 		result, err = run(context.Background(), parsed)
 	}
-	if err != nil {
-		log.Fatal(err)
-	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(result); err != nil {
+		log.Fatal(err)
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
 }
@@ -776,13 +809,13 @@ func run(ctx context.Context, options options) (output, error) {
 		protocolRuns, runErr := runProtocol(
 			ctx, client, protocol, initialSample.Permutation, options)
 		closeErr := client.Close()
+		result.Runs = append(result.Runs, protocolRuns...)
 		if runErr != nil {
-			return output{}, runErr
+			return result, runErr
 		}
 		if closeErr != nil {
 			return output{}, closeErr
 		}
-		result.Runs = append(result.Runs, protocolRuns...)
 	}
 	return result, nil
 }
@@ -810,10 +843,10 @@ func runProtocol(
 			run, err := benchmarkApply(
 				ctx, client, protocol, operation, initial,
 				strategy, options)
-			if err != nil {
-				return nil, err
-			}
 			runs = append(runs, run)
+			if err != nil {
+				return runs, err
+			}
 		}
 	}
 	return runs, nil
@@ -888,7 +921,8 @@ func benchmarkApply(
 			strategy, options.Transport)
 	})
 	if err != nil {
-		return runResult{}, err
+		options.RawSamples = true
+		return buildResult(protocol, operation, strategy, options.Transport, samples, elapsed, options), err
 	}
 	if operation == "write" {
 		for _, item := range samples {
@@ -924,14 +958,25 @@ func parallel(
 ) ([]sample, time.Duration, error) {
 	started := time.Now()
 	results := make([]sample, options.Iterations)
+	var failed atomic.Bool
 	errCh := make(chan error, options.Iterations)
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for range options.Concurrency {
 		wg.Go(func() {
 			for index := range jobs {
+				if failed.Load() {
+					results[index] = sample{Result: "not_attempted"}
+					continue
+				}
+				callStarted := time.Now()
 				value, err := call(index)
 				if err != nil {
+					failed.Store(true)
+					results[index] = sample{Result: "error_outcome_unknown", Error: err.Error(), LatencyUS: uint64(time.Since(callStarted).Microseconds())}
+					if errors.Is(err, errWriteClientStopped) {
+						results[index].Result = "not_attempted"
+					}
 					errCh <- err
 					continue
 				}
@@ -952,7 +997,7 @@ func parallel(
 			}
 		}
 	})...); err != nil {
-		return nil, 0, err
+		return results, time.Since(started), err
 	}
 	return results, time.Since(started), nil
 }
@@ -977,11 +1022,24 @@ func buildResult(
 	if operation == "read" {
 		return result
 	}
+	if options.RawSamples {
+		result.Samples = samples
+	}
+	clientQueue := summarize(collect(samples, func(s sample) uint64 { return s.ClientQueueUS }))
+	southboundQueue := summarize(collect(samples, func(s sample) uint64 { return s.SouthboundQueueUS }))
+	result.ClientQueueUS = &clientQueue
+	result.SouthboundQueueUS = &southboundQueue
 	result.Results = make(map[string]int)
 	var totalWrites uint64
 	for _, item := range samples {
 		result.Results[item.Result]++
 		totalWrites += uint64(item.DeviceWriteRequests)
+	}
+	attempted := len(samples) - result.Results["not_attempted"]
+	result.ThroughputOpsS = float64(attempted) / elapsed.Seconds()
+	result.CommittedThroughputOpsS = float64(result.Results["updated"]) / elapsed.Seconds()
+	if attempted > 0 {
+		result.SuccessRatePercent = 100 * float64(result.Results["updated"]+result.Results["unchanged"]) / float64(attempted)
 	}
 	server := summarize(collect(samples, func(value sample) uint64 { return value.ServerUS }))
 	overhead := summarize(collect(samples, func(value sample) uint64 {
@@ -1037,9 +1095,10 @@ func buildResult(
 func exclusiveBreakdown(samples []sample) map[string]summary {
 	selectors := map[string]func(sample) uint64{
 		"client_non_server": func(value sample) uint64 {
-			return residual(value.LatencyUS, value.ServerUS)
+			return residual(value.LatencyUS, value.ServerUS, value.ClientQueueUS)
 		},
-		"queue_wait": func(value sample) uint64 { return value.QueueUS },
+		"client_queue_wait": func(value sample) uint64 { return value.ClientQueueUS },
+		"queue_wait":        func(value sample) uint64 { return value.QueueUS },
 		"lease_revision_check": func(value sample) uint64 {
 			return value.LeaseRevisionCheckUS
 		},
@@ -1103,6 +1162,9 @@ func residual(total uint64, parts ...uint64) uint64 {
 func collect(samples []sample, selectValue func(sample) uint64) []uint64 {
 	values := make([]uint64, 0, len(samples))
 	for _, value := range samples {
+		if value.Result == "not_attempted" {
+			continue
+		}
 		values = append(values, selectValue(value))
 	}
 	return values
@@ -1179,7 +1241,11 @@ func validatePermutation(permutation []uint32) error {
 
 func makeClient(protocol string, options options) (benchmarkClient, error) {
 	if protocol == "grpc" {
-		return newGRPCClient(options.GRPCTarget)
+		c, err := newGRPCClient(options.GRPCTarget)
+		if err == nil {
+			c.compact = options.Compact
+		}
+		return c, err
 	}
 	if protocol == "http" {
 		return newHTTPClient(options.HTTPTarget, options.Concurrency), nil
@@ -1188,6 +1254,8 @@ func makeClient(protocol string, options options) (benchmarkClient, error) {
 }
 
 func parseOptions() (options, error) {
+	rawSamples := flag.Bool("raw-samples", false, "include per-request correlated timing samples")
+	compact := flag.Bool("compact", false, "request compact ApplyBatch replies")
 	runtimeLabel := flag.String("runtime", "unspecified", "agent runtime label")
 	grpcTarget := flag.String("grpc-target", "127.0.0.1:9339", "OcsOperations target")
 	httpTarget := flag.String("http-target", "127.0.0.1:5000", "HTTP target")
@@ -1223,6 +1291,7 @@ func parseOptions() (options, error) {
 		return options{}, fmt.Errorf("transport must be sequential or native-batch")
 	}
 	return options{
+		RawSamples: *rawSamples, Compact: *compact,
 		RuntimeLabel: *runtimeLabel,
 		GRPCTarget:   *grpcTarget,
 		HTTPTarget:   *httpTarget,

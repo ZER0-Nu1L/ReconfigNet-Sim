@@ -36,7 +36,26 @@ type GoAgent struct {
 	Binary string `json:"binary"`
 }
 
+// DirectBFRT configures the reusable Tofino pair-table backend.
+type DirectBFRT struct {
+	Type              string      `json:"type"`
+	Target            string      `json:"target"`
+	ClientID          uint32      `json:"client_id"`
+	DeviceID          uint32      `json:"device_id"`
+	PipeID            uint32      `json:"pipe_id"`
+	P4Name            string      `json:"p4_name"`
+	TableName         string      `json:"table_name"`
+	ActionName        string      `json:"action_name"`
+	IngressField      string      `json:"ingress_field"`
+	EgressField       string      `json:"egress_field"`
+	PortMap           map[int]int `json:"logical_to_device"`
+	TimeoutSeconds    float64     `json:"timeout_seconds"`
+	OwnershipLockFile string      `json:"ownership_lock_file"`
+	TwoPhase          bool        `json:"two_phase"`
+}
+
 type fileConfig struct {
+	FramedAPI             *Listener       `json:"framed_api,omitempty"`
 	Mode                  string          `json:"mode"`
 	DeploymentProfile     string          `json:"deployment_profile"`
 	ModelFile             string          `json:"model_file"`
@@ -73,6 +92,8 @@ type CapabilityProfile struct {
 }
 
 type Config struct {
+	FramedAPI         *Listener
+	DirectBFRT        *DirectBFRT
 	Mode              string
 	DeploymentProfile string
 	GRPCAPI           Listener
@@ -188,7 +209,39 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("model capability-profile must match capability_profile_file")
 	}
 
+	var direct *DirectBFRT
+	if raw.DeploymentProfile == "go-direct-bfrt" {
+		if raw.Worker.Target != "" || raw.Worker.TimeoutSeconds != 0 {
+			return Config{}, fmt.Errorf("go-direct-bfrt must not configure a Python worker")
+		}
+		direct = &DirectBFRT{}
+		decoder := json.NewDecoder(bytes.NewReader(raw.Backend))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(direct); err != nil {
+			return Config{}, fmt.Errorf("decode direct backend: %w", err)
+		}
+		if direct.Type != "bfrt" || direct.Target == "" || direct.P4Name == "" || direct.TableName == "" || direct.ActionName == "" || direct.IngressField == "" || direct.EgressField == "" || direct.TimeoutSeconds <= 0 || direct.OwnershipLockFile == "" {
+			return Config{}, fmt.Errorf("direct BFRT backend requires explicit endpoint, program, table, fields, timeout and ownership lock")
+		}
+		if direct.PipeID > 65535 {
+			return Config{}, fmt.Errorf("pipe_id exceeds 16 bits")
+		}
+		if !filepath.IsAbs(direct.OwnershipLockFile) {
+			return Config{}, fmt.Errorf("ownership_lock_file must be an absolute path")
+		}
+		if len(direct.PortMap) != modelData.Inventory.Len() {
+			return Config{}, fmt.Errorf("logical_to_device must map every inventory port")
+		}
+		seen := map[int]bool{}
+		for logical, device := range direct.PortMap {
+			if logical < 1 || logical > modelData.Inventory.Len() || device < 0 || device > 65535 || seen[device] {
+				return Config{}, fmt.Errorf("invalid or duplicate port mapping")
+			}
+			seen[device] = true
+		}
+	}
 	return Config{
+		FramedAPI: raw.FramedAPI, DirectBFRT: direct,
 		Mode:              raw.Mode,
 		DeploymentProfile: raw.DeploymentProfile,
 		GRPCAPI:           raw.GRPCAPI,
@@ -215,8 +268,8 @@ func validateConfig(config *fileConfig) error {
 	if config.Mode != "l2" && config.Mode != "l3" {
 		return fmt.Errorf("mode must be either l2 or l3")
 	}
-	if config.DeploymentProfile != "go-split-grpc" {
-		return fmt.Errorf("deployment_profile must be go-split-grpc for the Go Agent")
+	if config.DeploymentProfile != "go-split-grpc" && config.DeploymentProfile != "go-direct-bfrt" {
+		return fmt.Errorf("deployment_profile must be go-split-grpc or go-direct-bfrt for the Go Agent")
 	}
 	if config.ModelFile == "" {
 		return fmt.Errorf("model_file must be a non-empty string")
@@ -224,13 +277,18 @@ func validateConfig(config *fileConfig) error {
 	if config.CapabilityProfileFile == "" {
 		return fmt.Errorf("capability_profile_file must be a non-empty string")
 	}
+	if config.FramedAPI != nil {
+		if err := validateListener("framed_api", *config.FramedAPI); err != nil {
+			return err
+		}
+	}
 	if err := validateListener("grpc_api", config.GRPCAPI); err != nil {
 		return err
 	}
-	if config.Worker.Target == "" {
+	if config.DeploymentProfile == "go-split-grpc" && config.Worker.Target == "" {
 		return fmt.Errorf("worker.target must be a non-empty string")
 	}
-	if config.Worker.TimeoutSeconds <= 0 {
+	if config.DeploymentProfile == "go-split-grpc" && config.Worker.TimeoutSeconds <= 0 {
 		return fmt.Errorf("worker.timeout_seconds must be greater than zero")
 	}
 	if config.Device.ConsistencyMode != "STRICT_DEVICE" &&

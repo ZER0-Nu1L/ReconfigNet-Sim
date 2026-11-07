@@ -174,6 +174,9 @@ func (s *operationsServer) ApplyBatch(
 	if err != nil {
 		return nil, apierr.GRPC(err)
 	}
+	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get("x-ocs-compact-reply")) > 0 && md.Get("x-ocs-compact-reply")[0] == "true" {
+		return &ocsv1.OperationReply{State: &ocsv1.RuntimeState{Revision: result.Revision, Mode: modeProto(result.Mode), Status: statusProto(result.State)}, Result: result.Result, RequestId: result.RequestID, RequestReceivedUnixNs: result.RequestReceivedUnixNS, Timing: timingProto(&result.Timing)}, nil
+	}
 	return operationReply(result, s.agent.Snapshot()), nil
 }
 

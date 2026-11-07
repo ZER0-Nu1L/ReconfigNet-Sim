@@ -3,11 +3,53 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+func TestConcurrentQueuedHTTPWritesStopAfterFirstFailure(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"error":"outcome unknown"}`))
+	}))
+	defer server.Close()
+	client := newHTTPClient(strings.TrimPrefix(server.URL, "http://"), 4)
+	defer client.Close()
+	samples, _, err := parallel(options{Iterations: 8, Concurrency: 4}, func(index int) (sample, error) {
+		return client.Apply(t.Context(), []uint32{2, 1}, "DELTA", "NATIVE_BATCH")
+	})
+	if err == nil || calls.Load() != 1 {
+		t.Fatalf("writes continued after failure: %d, %v", calls.Load(), err)
+	}
+	skipped := 0
+	for _, item := range samples {
+		if item.Result == "not_attempted" {
+			skipped++
+		}
+	}
+	if skipped != 7 {
+		t.Fatalf("queued writes not preserved as unattempted: %+v", samples)
+	}
+}
+
+func TestUnknownOutcomeStopsFurtherWritesAndPreservesSamples(t *testing.T) {
+	calls := 0
+	opts := options{Iterations: 3, Concurrency: 1, RawSamples: true}
+	samples, elapsed, err := parallel(opts, func(index int) (sample, error) { calls++; return sample{}, errors.New("lost response") })
+	if err == nil || calls != 1 || len(samples) != 3 || samples[0].Error == "" || samples[1].Result != "not_attempted" {
+		t.Fatalf("calls=%d samples=%+v error=%v", calls, samples, err)
+	}
+	report := buildResult("grpc", "write", "DELTA", "NATIVE_BATCH", samples, elapsed, opts)
+	if report.CommittedThroughputOpsS != 0 || report.Results["not_attempted"] != 2 || len(report.Samples) != 3 {
+		t.Fatalf("report=%+v", report)
+	}
+}
 
 func TestLegacyHTTPClientApplyTracksUpdatedAndRejected(t *testing.T) {
 	responses := []int{http.StatusOK, http.StatusConflict}

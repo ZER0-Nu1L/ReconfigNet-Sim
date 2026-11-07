@@ -7,19 +7,22 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	ocsclient "github.com/reconfig-net-sim/ocs-go-agent/client"
 	ocsv1 "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
 type options struct {
+	Warmup     int
+	BusyPoll   bool
+	Compact    bool
 	Controller string
 	SourceIP   string
 	OldTarget  string
@@ -46,6 +49,7 @@ type apiTiming struct {
 }
 
 type sampleResult struct {
+	RequestID                 uint64    `json:"request_id"`
 	Sample                    int       `json:"sample"`
 	Success                   bool      `json:"success"`
 	BaselineOldReplies        uint64    `json:"baseline_old_replies"`
@@ -64,17 +68,21 @@ type sampleResult struct {
 }
 
 type output struct {
-	Schema     string         `json:"schema"`
-	Controller string         `json:"controller"`
-	SourceIP   string         `json:"source_ip"`
-	OldTarget  string         `json:"old_target_ip"`
-	NewTarget  string         `json:"new_target_ip"`
-	Port       int            `json:"port"`
-	OldPI      []uint32       `json:"old_pi"`
-	NewPI      []uint32       `json:"new_pi"`
-	IntervalUS int64          `json:"probe_interval_us"`
-	SettleMS   int64          `json:"settle_ms"`
-	Samples    []sampleResult `json:"samples"`
+	ProbeSendIntervalsUS map[uint64]uint64 `json:"probe_send_intervals_us"`
+	ProbeSendErrors      uint64            `json:"probe_send_errors"`
+	Warmup               int               `json:"warmup"`
+	BusyPoll             bool              `json:"busy_poll"`
+	Schema               string            `json:"schema"`
+	Controller           string            `json:"controller"`
+	SourceIP             string            `json:"source_ip"`
+	OldTarget            string            `json:"old_target_ip"`
+	NewTarget            string            `json:"new_target_ip"`
+	Port                 int               `json:"port"`
+	OldPI                []uint32          `json:"old_pi"`
+	NewPI                []uint32          `json:"new_pi"`
+	IntervalUS           int64             `json:"probe_interval_us"`
+	SettleMS             int64             `json:"settle_ms"`
+	Samples              []sampleResult    `json:"samples"`
 }
 
 type echoEvent struct {
@@ -131,7 +139,9 @@ func (s *sampleTracker) observe(event echoEvent) {
 	}
 	if event.target == "old" {
 		s.oldRepliesAfterRequest++
-		s.lastOld = event.received
+		if s.firstNew.IsZero() {
+			s.lastOld = event.received
+		}
 	} else {
 		s.newRepliesAfterRequest++
 		if s.firstNew.IsZero() {
@@ -156,6 +166,11 @@ func (s *sampleTracker) snapshot() sampleTracker {
 }
 
 type probeLoop struct {
+	closeOnce  sync.Once
+	busy       bool
+	intervals  map[uint64]uint64
+	sendErrors uint64
+	sendDone   chan struct{}
 	connection *net.UDPConn
 	oldTarget  *net.UDPAddr
 	newTarget  *net.UDPAddr
@@ -184,6 +199,7 @@ func newProbeLoop(sourceIP string, oldTarget string, newTarget string,
 		return nil, fmt.Errorf("old and new targets must be IP addresses")
 	}
 	return &probeLoop{
+		intervals: make(map[uint64]uint64), sendDone: make(chan struct{}),
 		connection: connection,
 		oldTarget:  oldAddress,
 		newTarget:  newAddress,
@@ -200,29 +216,58 @@ func (p *probeLoop) start() {
 }
 
 func (p *probeLoop) close() {
-	close(p.stop)
-	p.connection.Close()
-	<-p.done
+	p.closeOnce.Do(func() { close(p.stop); p.connection.Close(); <-p.done; <-p.sendDone })
 }
 
 func (p *probeLoop) send() {
+	defer close(p.sendDone)
+	if p.busy {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+	}
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
+	var previous time.Time
+	next := time.Now()
 	for {
+		if p.busy {
+			for time.Now().Before(next) {
+				select {
+				case <-p.stop:
+					return
+				default:
+				}
+			}
+			next = time.Now().Add(p.interval)
+		} else {
+			select {
+			case <-p.stop:
+				return
+			case <-ticker.C:
+			}
+		}
 		select {
 		case <-p.stop:
 			return
-		case <-ticker.C:
-			id := p.currentID.Load()
-			if id == 0 {
-				continue
-			}
-			sequence := p.sequence.Add(1)
-			for target, address := range map[string]*net.UDPAddr{
-				"old": p.oldTarget, "new": p.newTarget,
-			} {
-				payload := fmt.Sprintf("ocs-fast:%d:%s:%d", id, target, sequence)
-				_, _ = p.connection.WriteToUDP([]byte(payload), address)
+		default:
+		}
+		id := p.currentID.Load()
+		if id == 0 {
+			previous = time.Time{}
+			continue
+		}
+		now := time.Now()
+		if !previous.IsZero() {
+			p.intervals[uint64(now.Sub(previous).Microseconds())]++
+		}
+		previous = now
+		sequence := p.sequence.Add(1)
+		for target, address := range map[string]*net.UDPAddr{
+			"old": p.oldTarget, "new": p.newTarget,
+		} {
+			payload := fmt.Sprintf("ocs-fast:%d:%s:%d", id, target, sequence)
+			if _, err := p.connection.WriteToUDP([]byte(payload), address); err != nil {
+				p.sendErrors++
 			}
 		}
 	}
@@ -265,20 +310,18 @@ func main() {
 		fatal(err)
 	}
 	result, err := run(context.Background(), parsed)
-	if err != nil {
-		fatal(err)
-	}
-	encoded, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		fatal(err)
+	encoded, encodeErr := json.MarshalIndent(result, "", "  ")
+	if encodeErr != nil {
+		fatal(encodeErr)
 	}
 	fmt.Println(string(encoded))
+	if err != nil {
+		fatal(err)
+	}
 }
 
-func run(ctx context.Context, options options) (output, error) {
-	connection, err := grpc.NewClient(
-		options.Controller,
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+func run(ctx context.Context, options options) (result output, runErr error) {
+	connection, err := ocsclient.Dial(ctx, options.Controller)
 	if err != nil {
 		return output{}, err
 	}
@@ -287,7 +330,7 @@ func run(ctx context.Context, options options) (output, error) {
 
 	leaseCtx, cancel := context.WithTimeout(ctx, options.Timeout)
 	lease, err := client.AcquireControl(
-		leaseCtx, &ocsv1.AcquireControlRequest{ClientId: "ocs-reconfig-probe"})
+		leaseCtx, &ocsv1.AcquireControlRequest{ClientId: "ocs-reconfig-probe", RequestedLeaseSeconds: 300})
 	cancel()
 	if err != nil {
 		return output{}, err
@@ -303,8 +346,21 @@ func run(ctx context.Context, options options) (output, error) {
 	revision := lease.GetRevision()
 	writeCtx := metadata.AppendToOutgoingContext(
 		ctx, "x-ocs-control-lease", lease.GetLeaseToken())
+	if options.Compact {
+		writeCtx = metadata.AppendToOutgoingContext(writeCtx, "x-ocs-compact-reply", "true")
+	}
+	lastRenew := time.Now()
 
 	apply := func(mapping []uint32) (*ocsv1.OperationReply, error) {
+		if time.Since(lastRenew) > 10*time.Second {
+			renewCtx, renewCancel := context.WithTimeout(ctx, options.Timeout)
+			_, renewErr := client.RenewControl(renewCtx, &ocsv1.RenewControlRequest{LeaseToken: lease.GetLeaseToken(), RequestedLeaseSeconds: 300})
+			renewCancel()
+			if renewErr != nil {
+				return nil, renewErr
+			}
+			lastRenew = time.Now()
+		}
 		requestCtx, requestCancel := context.WithTimeout(writeCtx, options.Timeout)
 		defer requestCancel()
 		reply, callErr := client.ApplyBatch(requestCtx, &ocsv1.ApplyBatchRequest{
@@ -335,10 +391,16 @@ func run(ctx context.Context, options options) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
+	probes.busy = options.BusyPoll
 	probes.start()
-	defer probes.close()
+	defer func() {
+		probes.close()
+		result.ProbeSendIntervalsUS = probes.intervals
+		result.ProbeSendErrors = probes.sendErrors
+	}()
 
-	result := output{
+	result = output{
+		Warmup: options.Warmup, BusyPoll: options.BusyPoll,
 		Schema:     "reconfig-net-ocs-fast-switch/v1",
 		Controller: options.Controller,
 		SourceIP:   options.SourceIP,
@@ -351,19 +413,25 @@ func run(ctx context.Context, options options) (output, error) {
 		SettleMS:   options.Settle.Milliseconds(),
 	}
 
-	for index := 1; index <= options.Samples; index++ {
+	for index := 1; index <= options.Samples+options.Warmup; index++ {
 		id := uint64(index)
 		tracker.reset(id)
 		probes.currentID.Store(id)
 		baselineDeadline := time.Now().Add(options.Timeout)
 		for {
 			snapshot := tracker.snapshot()
+			if snapshot.baselineNewReplies != 0 {
+				err := fmt.Errorf("sample %d new path reachable before request; refusing transition", index)
+				result.Samples = append(result.Samples, sampleResult{Sample: index, Error: err.Error(), BaselineOldReplies: snapshot.baselineOldReplies, BaselineNewReplies: snapshot.baselineNewReplies})
+				return result, err
+			}
 			if snapshot.baselineOldReplies >= 3 {
 				break
 			}
 			if time.Now().After(baselineDeadline) {
-				return output{}, fmt.Errorf(
-					"sample %d did not establish old-path baseline", index)
+				err := fmt.Errorf("sample %d did not establish old-path baseline", index)
+				result.Samples = append(result.Samples, sampleResult{Sample: index, Error: err.Error()})
+				return result, err
 			}
 			time.Sleep(options.Interval)
 		}
@@ -379,9 +447,10 @@ func run(ctx context.Context, options options) (output, error) {
 		if callErr != nil {
 			record.Error = callErr.Error()
 			result.Samples = append(result.Samples, record)
-			break
+			return result, fmt.Errorf("apply new mapping; outcome may be unknown: %w", callErr)
 		}
 		record.APIResult = reply.GetResult()
+		record.RequestID = reply.GetRequestId()
 		record.Revision = reply.GetState().GetRevision()
 		timing := reply.GetTiming()
 		record.APITiming = apiTiming{
@@ -420,19 +489,30 @@ func run(ctx context.Context, options options) (output, error) {
 			record.RequestToFirstNewUS != nil &&
 			record.BaselineOldReplies >= 3 &&
 			record.BaselineNewReplies == 0)
-		result.Samples = append(result.Samples, record)
+		if index > options.Warmup || !record.Success {
+			result.Samples = append(result.Samples, record)
+		}
 
 		probes.currentID.Store(0)
 		if _, err := apply(options.OldPI); err != nil {
 			return result, fmt.Errorf("restore old mapping: %w", err)
 		}
+		if !record.Success {
+			return result, fmt.Errorf("sample %d failed forwarding validation; old mapping restored", index)
+		}
 		time.Sleep(options.Settle)
 	}
 	probes.currentID.Store(0)
+	probes.close()
+	result.ProbeSendIntervalsUS = probes.intervals
+	result.ProbeSendErrors = probes.sendErrors
 	return result, nil
 }
 
 func parseOptions() (options, error) {
+	warmup := flag.Int("warmup", 100, "unmeasured warmup transitions")
+	busy := flag.Bool("busy-poll", false, "dedicate a sender OS thread to probe pacing")
+	compact := flag.Bool("compact", false, "compact ApplyBatch response")
 	controller := flag.String("controller", "127.0.0.1:9339", "gRPC target")
 	sourceIP := flag.String("source-ip", "", "local data-plane source IP")
 	oldTarget := flag.String("old-target-ip", "", "old connected target IP")
@@ -461,11 +541,12 @@ func parseOptions() (options, error) {
 		return options{}, fmt.Errorf(
 			"source-ip, old-target-ip, and new-target-ip are required")
 	}
-	if *samples < 1 || *interval <= 0 || *settle < 0 || *timeout <= 0 {
+	if *samples < 1 || *warmup < 0 || *interval <= 0 || *settle < 0 || *timeout <= 0 {
 		return options{}, fmt.Errorf(
-			"samples/interval/timeout must be positive and settle non-negative")
+			"samples/interval/timeout must be positive; warmup/settle must be non-negative")
 	}
 	return options{
+		Warmup: *warmup, BusyPoll: *busy, Compact: *compact,
 		Controller: *controller,
 		SourceIP:   *sourceIP,
 		OldTarget:  *oldTarget,
