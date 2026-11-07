@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
-	ocsv1 "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/proto"
 	"net"
 	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	ocsv1 "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestDiagnosticCodecKeepsProtobufContract(t *testing.T) {

@@ -1,10 +1,11 @@
 package main
 
 import (
+	"strings"
+
 	ocsv1 "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"strings"
 )
 
 // This client changes buffering only; authentication and no-replay behavior are

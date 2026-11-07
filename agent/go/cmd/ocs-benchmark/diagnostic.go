@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"google.golang.org/grpc/stats"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/stats"
 )
 
 type northboundDiagnostic struct {
