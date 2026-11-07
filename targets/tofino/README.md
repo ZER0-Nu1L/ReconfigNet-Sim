@@ -66,7 +66,9 @@ eval "$(python3 targets/tofino/ci/image_lock.py verify)"
 tofino_image=$TOFINO_IMAGE
 repository_root=$PWD
 artifact_root=$(mktemp -d /tmp/reconfignet-tofino-model.XXXXXX)
-mkdir -p "$artifact_root/compile" "$artifact_root/model"
+mkdir -p "$artifact_root/compile" "$artifact_root/model/go-bin"
+(cd agent/go && CGO_ENABLED=0 go build -o "$artifact_root/model/go-bin/ocs-go-agent" ./cmd/ocs-go-agent)
+(cd agent/go && CGO_ENABLED=0 go build -o "$artifact_root/model/go-bin/ocs-control" ./cmd/ocs-control)
 
 docker pull "$tofino_image"
 
@@ -93,7 +95,7 @@ docker run --rm --privileged \
   --workdir /workspace/ReconfigNet-Sim \
   "$tofino_image" \
   bash -ceu \
-  'bash targets/tofino/ci/verify-model.sh /artifacts'
+  'OCS_GO_AGENT_BIN=/artifacts/go-bin/ocs-go-agent OCS_CONTROL_BIN=/artifacts/go-bin/ocs-control bash targets/tofino/ci/verify-model.sh /artifacts'
 ```
 
 The compile logs remain under `$artifact_root/compile`. Full-model evidence is
@@ -222,3 +224,17 @@ PYTHONPATH="$PWD/agent/python:$PWD/targets/tofino/runtime" \
 ```
 
 Hardware acceptance must additionally verify port state, BFRT ownership, the installed logical-to-`dev_port` mapping, endpoint neighbors, OCS-limited reachability and separately measured packet blackout.
+
+### Go low-latency baseline
+
+Use the explicit `go-direct-bfrt` profile for new latency experiments. It places
+Core and the BFRT adapter in one Go process, uses one mixed request by default,
+and connects to the existing switchd. See [configuration, client integration and
+recovery](../../docs/ocs-go-direct.md). The Python launcher profiles remain
+available for compatibility and rollback.
+
+The full model gate runs both the Python-backend PTF and the Go Agent PTF.
+The Go phase drives OcsOperations, checks one mixed write and hardware-verified
+ACKs, forwarding/drop behavior, explicit recovery, ownership exclusion and a
+clean restart. Its state snapshots come from the Agent after startup/write
+hardware verification, not an independent second BFRT writer.

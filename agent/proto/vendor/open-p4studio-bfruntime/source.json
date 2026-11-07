@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/p4lang/open-p4studio",
+  "commit": "6d8b203700e3ca0f1208418072f88dc4a6a597e8",
+  "files": {
+    "bfruntime.proto": {
+      "url": "https://raw.githubusercontent.com/p4lang/open-p4studio/6d8b203700e3ca0f1208418072f88dc4a6a597e8/pkgsrc/bf-drivers/src/bf_rt/proto/bfruntime.proto",
+      "sha256": "2956e9c425a846c65220b3fbbbe1bc04c7bc20b5b8515379d3c2ed36ca36fa15"
+    },
+    "LICENSE": {
+      "url": "https://raw.githubusercontent.com/p4lang/open-p4studio/6d8b203700e3ca0f1208418072f88dc4a6a597e8/LICENSES/Apache-2.0.txt",
+      "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+    }
+  }
+}

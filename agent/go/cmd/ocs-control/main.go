@@ -10,9 +10,8 @@ import (
 	"strings"
 	"time"
 
+	ocsclient "github.com/reconfig-net-sim/ocs-go-agent/client"
 	ocsv1 "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -23,7 +22,7 @@ type output struct {
 }
 
 func main() {
-	operation := flag.String("operation", "get", "get, apply, mode, or recover")
+	operation := flag.String("operation", "get", "get, control-state, apply, mode, or recover")
 	target := flag.String("target", "127.0.0.1:9339", "OcsOperations gRPC target")
 	piText := flag.String("pi", "", "comma-separated permutation for apply")
 	strategyText := flag.String("strategy", "delta", "full or delta")
@@ -35,8 +34,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
-	connection, err := grpc.NewClient(
-		*target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := ocsclient.Dial(ctx, *target)
 	if err != nil {
 		fatal(err)
 	}
@@ -45,6 +43,8 @@ func main() {
 
 	var reply any
 	switch strings.ToLower(*operation) {
+	case "control-state":
+		reply, err = client.GetControlState(ctx, &ocsv1.Empty{})
 	case "get":
 		reply, err = client.GetPermutation(ctx, &ocsv1.Empty{})
 	case "apply":
@@ -99,7 +99,7 @@ func main() {
 			})
 		})
 	default:
-		err = fmt.Errorf("operation must be get, apply, mode, or recover")
+		err = fmt.Errorf("operation must be get, control-state, apply, mode, or recover")
 	}
 	if err != nil {
 		fatal(err)

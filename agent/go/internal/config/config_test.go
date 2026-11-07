@@ -1,11 +1,62 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLoadDirectConfigurationAndRejectIncompleteMapping(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "configs", "tofino", "go-direct-bfrt.example.json")
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.DirectBFRT == nil || loaded.Worker.Target != "" || loaded.FramedAPI == nil {
+		t.Fatal("not a standalone direct profile")
+	}
+	bytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(bytes, &raw); err != nil {
+		t.Fatal(err)
+	}
+	configDir, _ := filepath.Abs(filepath.Dir(path))
+	raw["model_file"] = filepath.Join(configDir, "model-6port.yaml")
+	raw["capability_profile_file"] = filepath.Join(configDir, "capabilities.yaml")
+	cases := []struct {
+		name   string
+		change func(map[string]any)
+	}{
+		{"missing_port", func(b map[string]any) { delete(b["logical_to_device"].(map[string]any), "1") }},
+		{"unknown_field", func(b map[string]any) { b["unknown_setting"] = true }},
+		{"duplicate_device_port", func(b map[string]any) { b["logical_to_device"].(map[string]any)["1"] = float64(2) }},
+		{"relative_lock", func(b map[string]any) { b["ownership_lock_file"] = "relative.lock" }},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			data, _ := json.Marshal(raw)
+			var copy map[string]any
+			if err := json.Unmarshal(data, &copy); err != nil {
+				t.Fatal(err)
+			}
+			item.change(copy["backend"].(map[string]any))
+			data, _ = json.Marshal(copy)
+			bad := filepath.Join(t.TempDir(), "bad.json")
+			if err := os.WriteFile(bad, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(bad); err == nil {
+				t.Fatal("accepted invalid direct configuration")
+			}
+		})
+	}
+
+}
 
 func TestLoadP4appConfig(t *testing.T) {
 	configPath := filepath.Join(

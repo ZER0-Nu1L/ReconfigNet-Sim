@@ -71,7 +71,7 @@ jobs:
       - name: Check Go formatting
         working-directory: agent/go
         run: |
-          unformatted="$(gofmt -l cmd internal)"
+          unformatted="$(gofmt -l cmd internal client examples)"
           if [ -n "$unformatted" ]; then
             echo "$unformatted"
             exit 1

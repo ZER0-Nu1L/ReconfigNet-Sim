@@ -1,6 +1,7 @@
 """PTF coverage for OCS forwarding and production BFRT reconfiguration."""
 
 import json
+import subprocess
 
 import ptf
 from ptf.base_tests import BaseTest
@@ -73,6 +74,34 @@ class OCSMappingReconfigurationTest(BaseTest):
             testutils.send_packet(self, source, packet)
             testutils.verify_no_other_packets(self, timeout=0.2)
 
+    def _read(self, backend):
+        if backend is not None:
+            return backend.read_pairs('SOFTWARE')
+        # Only the Go Agent binds this pipeline. Its startup and CACHED_SYNC
+        # writes verify hardware; the public API exposes the verified state.
+        raw = subprocess.check_output([
+            testutils.test_param_get('go_control'), '--target',
+            '127.0.0.1:9339', '--operation', 'get'], timeout=15)
+        reply = json.loads(raw.decode())['reply']
+        self.assertEqual(reply['state']['device_state']['cache_status'], 'READY')
+        return mapping_pairs(reply['permutation']['pi'])
+
+    def _apply(self, backend, previous, target):
+        control = testutils.test_param_get('go_control')
+        if not control:
+            return backend.apply(previous, target, strategy='DELTA',
+                                 transport='NATIVE_BATCH')
+        pi = ','.join(str(dict(target)[port]) for port in range(1, 7))
+        raw = subprocess.check_output([
+            control, '--target', '127.0.0.1:9339', '--operation', 'apply',
+            '--pi', pi, '--timeout', '20s'], timeout=25)
+        reply = json.loads(raw.decode())['reply']
+        self.assertEqual(reply['result'], 'updated')
+        timing = reply['timing']
+        self.assertEqual(timing['device_write_requests'], 1)
+        self.assertEqual(timing['write_verification'], 'HARDWARE_READBACK')
+        return timing
+
     def runTest(self):
         initial_pairs = mapping_pairs(INITIAL_MAPPING)
         updated_pairs = mapping_pairs(UPDATED_MAPPING)
@@ -97,19 +126,24 @@ class OCSMappingReconfigurationTest(BaseTest):
             'updated_permitted_paths': len(updated_pairs),
             'retired_paths_dropped': len(initial_pairs),
         }
+        if testutils.test_param_get('go_control'):
+            evidence['state_source'] = 'GO_AGENT_STATE_AFTER_HARDWARE_VERIFICATION'
+        else:
+            evidence['state_source'] = 'BFRT_SOFTWARE_READBACK'
         backend = None
         try:
-            backend = BFRTBackend({
-                'grpc_target': '127.0.0.1:50052',
-                'client_id': 41,
-                'device_id': 0,
-                'p4_name': 'ocs',
-                'logical_to_device_port': LOGICAL_TO_DEVICE_PORT,
-                'timeout_seconds': 10,
-                'subscribe_attempts': 5,
-            }, consistency_mode='CACHED_SYNC')
+            if not testutils.test_param_get('go_control'):
+                backend = BFRTBackend({
+                    'grpc_target': '127.0.0.1:50052',
+                    'client_id': 41,
+                    'device_id': 0,
+                    'p4_name': 'ocs',
+                    'logical_to_device_port': LOGICAL_TO_DEVICE_PORT,
+                    'timeout_seconds': 10,
+                    'subscribe_attempts': 5,
+                }, consistency_mode='CACHED_SYNC')
 
-            observed_initial = backend.read_pairs('SOFTWARE')
+            observed_initial = self._read(backend)
             evidence['initial_readback'] = sorted(observed_initial)
             self.assertEqual(observed_initial, initial_pairs)
 
@@ -117,12 +151,9 @@ class OCSMappingReconfigurationTest(BaseTest):
             self._verify_permitted(initial_pairs)
             self._verify_dropped(initial_drops)
 
-            evidence['reconfiguration_timing'] = backend.apply(
-                initial_pairs,
-                updated_pairs,
-                strategy='DELTA',
-                transport='NATIVE_BATCH')
-            observed_updated = backend.read_pairs('SOFTWARE')
+            evidence['reconfiguration_timing'] = self._apply(
+                backend, initial_pairs, updated_pairs)
+            observed_updated = self._read(backend)
             evidence['updated_readback'] = sorted(observed_updated)
             self.assertEqual(observed_updated, updated_pairs)
 
@@ -130,20 +161,18 @@ class OCSMappingReconfigurationTest(BaseTest):
             self._verify_permitted(updated_pairs)
             self._verify_dropped(initial_pairs)
         finally:
-            if backend is not None:
+            if backend is not None or testutils.test_param_get('go_control'):
                 try:
-                    current_pairs = backend.read_pairs('SOFTWARE')
+                    current_pairs = self._read(backend)
                     if current_pairs != initial_pairs:
-                        evidence['restore_timing'] = backend.apply(
-                            current_pairs,
-                            initial_pairs,
-                            strategy='DELTA',
-                            transport='NATIVE_BATCH')
-                    restored_pairs = backend.read_pairs('SOFTWARE')
+                        evidence['restore_timing'] = self._apply(
+                            backend, current_pairs, initial_pairs)
+                    restored_pairs = self._read(backend)
                     evidence['restored_readback'] = sorted(restored_pairs)
                     self.assertEqual(restored_pairs, initial_pairs)
                 finally:
-                    backend.close()
+                    if backend is not None:
+                        backend.close()
             if timing_file:
                 with open(timing_file, 'w', encoding='utf-8') as output:
                     json.dump(evidence, output, indent=2, sort_keys=True)

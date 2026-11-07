@@ -118,6 +118,19 @@ jobs:
       - name: Pull immutable Open P4 Studio image
         run: docker pull "$TOFINO_IMAGE"
 
+      - name: Set up Go for model Agent binaries
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25"
+          cache-dependency-path: agent/go/go.sum
+
+      - name: Build Go model clients
+        working-directory: agent/go
+        run: |
+          mkdir -p ../../artifacts/tofino-model/go-bin
+          CGO_ENABLED=0 go build -o ../../artifacts/tofino-model/go-bin/ocs-go-agent ./cmd/ocs-go-agent
+          CGO_ENABLED=0 go build -o ../../artifacts/tofino-model/go-bin/ocs-control ./cmd/ocs-control
+
       - name: Load, initialize, and run project PTF in Tofino model
         run: |
           set -euo pipefail
@@ -127,7 +140,9 @@ jobs:
             --volume "$GITHUB_WORKSPACE/artifacts/tofino-model:/artifacts" \
             --workdir /workspace/ReconfigNet-Sim \
             "$TOFINO_IMAGE" \
-            bash -ceu 'bash targets/tofino/ci/verify-model.sh /artifacts'
+            bash -ceu 'OCS_GO_AGENT_BIN=/artifacts/go-bin/ocs-go-agent \
+              OCS_CONTROL_BIN=/artifacts/go-bin/ocs-control \
+              bash targets/tofino/ci/verify-model.sh /artifacts'
 
       - name: Upload Tofino model evidence
         if: ${{ always() }}

@@ -47,6 +47,13 @@ with a SHA256 index.
 
 ## Generated code and runtime dependencies
 
+The Go BFRT bindings under `agent/go/gen/bfruntime/` are generated from the
+public Open P4 Studio `bfruntime.proto`, pinned at commit
+`6d8b203700e3ca0f1208418072f88dc4a6a597e8`. The protocol source, Apache-2.0
+license and provenance hashes are retained under
+`agent/proto/vendor/open-p4studio-bfruntime/`. The bindings do not use the
+confidential header or generated source from a private BF-SDE installation.
+
 Protocol-buffer files under `agent/go/gen/` and
 `agent/python/ocs_agent/proto/` are generated artifacts. The `.proto` files
 directly under `agent/proto/` are authored for this project; generated gNMI files retain

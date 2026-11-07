@@ -39,7 +39,7 @@ test-go:
 	docker run --rm \
 		-v "$(REPOSITORY_DIR)/agent:/project" \
 		-w /project/go golang:1.25 \
-		sh -c 'test -z "$$(gofmt -l cmd internal)" && go test ./...'
+		sh -c 'test -z "$$(gofmt -l cmd internal client examples)" && go test ./...'
 
 test-go-race:
 	docker run --rm \
