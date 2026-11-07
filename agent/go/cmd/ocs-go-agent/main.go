@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -15,15 +16,36 @@ import (
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/backend"
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/bfrtclient"
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/config"
+	"github.com/reconfig-net-sim/ocs-go-agent/internal/observe"
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/server"
 	"google.golang.org/grpc"
 )
 
+type runtimeOptions struct {
+	writeBuffer   int
+	workers       uint
+	procs         int
+	tracePrefix   string
+	traceDuration time.Duration
+}
+
 func main() {
 	configPath := flag.String("config", "", "path to Agent JSON configuration")
 	diagnostic := flag.Bool("diagnostic", false, "enable opt-in northbound gRPC stage diagnostics")
+	var tuning runtimeOptions
+	flag.IntVar(&tuning.writeBuffer, "grpc-write-buffer-bytes", -1, "server write buffer; -1 preserves gRPC default")
+	flag.UintVar(&tuning.workers, "grpc-stream-workers", 0, "experimental gRPC worker pool; 0 preserves default")
+	flag.IntVar(&tuning.procs, "gomaxprocs", 0, "experimental runtime parallelism; 0 preserves default")
+	flag.StringVar(&tuning.tracePrefix, "trace-prefix", "", "opt-in absolute prefix for bounded SIGUSR1 runtime captures")
+	flag.DurationVar(&tuning.traceDuration, "trace-duration", 10*time.Second, "runtime capture duration, maximum 30s")
 	checkConfig := flag.Bool("check-config", false, "validate configuration without connecting to a device")
 	flag.Parse()
+	if tuning.writeBuffer < -1 || tuning.workers > 1024 || tuning.procs < 0 || tuning.procs > 128 {
+		log.Fatal("invalid experimental runtime option")
+	}
+	if tuning.procs > 0 {
+		runtime.GOMAXPROCS(tuning.procs)
+	}
 	if *configPath == "" {
 		log.Fatal("--config is required")
 	}
@@ -34,12 +56,12 @@ func main() {
 		fmt.Println("configuration valid; no device connection opened")
 		return
 	}
-	if err := run(*configPath, *diagnostic); err != nil {
+	if err := run(*configPath, *diagnostic, tuning); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(configPath string, diagnostic bool) error {
+func run(configPath string, diagnostic bool, tuning runtimeOptions) error {
 	loaded, err := config.Load(configPath)
 	if err != nil {
 		return err
@@ -47,6 +69,13 @@ func run(configPath string, diagnostic bool) error {
 	ctx, stop := signal.NotifyContext(
 		context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if tuning.tracePrefix != "" {
+		closeTrace, err := observe.OnSignal(ctx, tuning.tracePrefix, tuning.traceDuration)
+		if err != nil {
+			return err
+		}
+		defer closeTrace()
+	}
 	var deviceBackend backend.Device
 	if b := loaded.DirectBFRT; b != nil {
 		deviceBackend, err = backend.NewDirect(ctx, backend.DirectOptions{
@@ -77,6 +106,12 @@ func run(configPath string, diagnostic bool) error {
 		return err
 	}
 	var grpcOptions []grpc.ServerOption
+	if tuning.writeBuffer >= 0 {
+		grpcOptions = append(grpcOptions, grpc.WriteBufferSize(tuning.writeBuffer))
+	}
+	if tuning.workers > 0 {
+		grpcOptions = append(grpcOptions, grpc.NumStreamWorkers(uint32(tuning.workers)))
+	}
 	if diagnostic {
 		grpcOptions = append(grpcOptions, grpc.StatsHandler(server.DiagnosticStats{}))
 	}

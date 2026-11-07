@@ -35,3 +35,28 @@ OutPayload, InHeader and InPayload events. OutPayload follows transport enqueue;
 InPayload follows response decoding. These client markers locate delay within
 the invocation but can overlap remote server intervals, so do not add them to a
 server timing pie. Only durations are compared across machines.
+
+### Bounded runtime traces and experimental server settings
+
+The Agent accepts `--trace-prefix=/private/path/capture --trace-duration=10s`.
+An explicit SIGUSR1 then captures `capture.001.trace`, `capture.002.trace`, etc.
+Files are private and exclusive, captures are limited to 30 seconds, and repeated
+signals during a capture are ignored. No network diagnostics endpoint is added.
+The benchmark accepts `--trace-file=/private/path/client.trace` and the same
+bounded duration. Tasks log reply request IDs/revisions for correlation; Core
+regions distinguish commit waiting, BFRT completion, and reconciliation holds.
+Compare intervals within each host; do not subtract unsynchronized clocks.
+Runtime traces alter scheduling and must be compared with tracing disabled.
+
+Agent flags `--grpc-write-buffer-bytes=0`, `--grpc-stream-workers=1`, and
+`--gomaxprocs=1` expose separate experiments. Defaults preserve existing behavior.
+Workers are an experimental upstream API; runtime parallelism affects every
+Agent goroutine and may hurt concurrent or bursty workloads. Keep all of these
+out of the default deployment until measured and accepted for the actual load.
+
+`ocs-benchmark --request-interval=100ms --concurrency=1` provides serial pacing
+without catch-up bursts. Paced writes explicitly renew the lease every five
+seconds; a renewal failure stops subsequent writes. Renewal remains inside the
+measured Apply call, so affected latency is retained. Raw samples include start
+offsets for observed arrival-rate checks. Read-only RPC timings are a transport
+and snapshot-path diagnostic, not a substitute for synchronous update latency.

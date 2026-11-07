@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"runtime/trace"
 	"strconv"
 
 	ocsv1 "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1"
@@ -123,6 +124,11 @@ func (s *operationsServer) ApplyBatch(
 	ctx context.Context,
 	request *ocsv1.ApplyBatchRequest,
 ) (*ocsv1.OperationReply, error) {
+	if trace.IsEnabled() {
+		var task *trace.Task
+		ctx, task = trace.NewTask(ctx, "server.ApplyBatch")
+		defer task.End()
+	}
 	diagnostic := beginApplyDiagnostic(ctx)
 	defer diagnostic.finish(ctx)
 	if !request.GetHasExpectedRevision() {
@@ -175,6 +181,9 @@ func (s *operationsServer) ApplyBatch(
 			"ApplyBatch requires connection_set or permutation", nil)
 	}
 	diagnostic.endCore()
+	if trace.IsEnabled() {
+		trace.Logf(ctx, "ocs", "request=%d revision=%d", result.RequestID, result.Revision)
+	}
 	if err != nil {
 		return nil, apierr.GRPC(err)
 	}

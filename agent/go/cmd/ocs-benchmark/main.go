@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/trace"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 
 	ocsclient "github.com/reconfig-net-sim/ocs-go-agent/client"
 	ocsv1 "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1"
+	"github.com/reconfig-net-sim/ocs-go-agent/internal/observe"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -45,10 +47,12 @@ type options struct {
 	Iterations           int
 	Concurrency          int
 	Timeout              time.Duration
+	RequestInterval      time.Duration
 }
 
 type sample struct {
 	Diagnostic             *northboundDiagnostic `json:"northbound_diagnostic,omitempty"`
+	StartElapsedNS         uint64                `json:"start_elapsed_ns,omitzero"`
 	Error                  string                `json:"error,omitempty"`
 	ClientQueueUS          uint64
 	SouthboundQueueUS      uint64
@@ -137,6 +141,7 @@ type output struct {
 		Iterations           int      `json:"iterations"`
 		Concurrency          int      `json:"concurrency"`
 		Timeout              float64  `json:"timeout_seconds"`
+		RequestIntervalNS    int64    `json:"request_interval_ns,omitzero"`
 	} `json:"benchmark"`
 	ClientRuntime map[string]string `json:"client_runtime"`
 	GRPCTarget    string            `json:"grpc_target"`
@@ -156,14 +161,16 @@ type benchmarkClient interface {
 }
 
 type grpcClient struct {
-	connection   ocsclient.Connection
-	compact      bool
-	diagnostic   bool
-	client       ocsv1.OcsOperationsClient
-	mu           sync.Mutex
-	leaseToken   string
-	revision     uint64
-	writeFailure error
+	connection    ocsclient.Connection
+	compact       bool
+	diagnostic    bool
+	client        ocsv1.OcsOperationsClient
+	mu            sync.Mutex
+	leaseToken    string
+	revision      uint64
+	writeFailure  error
+	renewInterval time.Duration
+	nextRenew     time.Time
 }
 
 var errWriteClientStopped = errors.New("write not attempted: client stopped after earlier failure")
@@ -177,6 +184,7 @@ func (c *grpcClient) Acquire(ctx context.Context) error {
 	}
 	c.leaseToken = lease.GetLeaseToken()
 	c.revision = lease.GetRevision()
+	c.nextRenew = time.Now().Add(c.renewInterval)
 	return nil
 }
 
@@ -235,11 +243,24 @@ func (c *grpcClient) Apply(
 	strategy string,
 	transport string,
 ) (sample, error) {
+	if trace.IsEnabled() {
+		var task *trace.Task
+		ctx, task = trace.NewTask(ctx, "client.ApplyBatch")
+		defer task.End()
+	}
 	totalStarted := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.writeFailure != nil {
 		return sample{}, fmt.Errorf("%w: %v", errWriteClientStopped, c.writeFailure)
+	}
+	if c.renewInterval > 0 && !time.Now().Before(c.nextRenew) {
+		_, err := c.client.RenewControl(ctx, &ocsv1.RenewControlRequest{LeaseToken: c.leaseToken})
+		if err != nil {
+			c.writeFailure = err
+			return sample{}, err
+		}
+		c.nextRenew = time.Now().Add(c.renewInterval)
 	}
 	prepareStarted := time.Now()
 	clientQueueUS := uint64(time.Since(totalStarted).Microseconds())
@@ -278,6 +299,9 @@ func (c *grpcClient) Apply(
 		diagnostic.finishClient(rpcDuration)
 	}
 	c.revision = response.GetState().GetRevision()
+	if trace.IsEnabled() {
+		trace.Logf(ctx, "ocs", "request=%d revision=%d", response.GetRequestId(), c.revision)
+	}
 	if diagnostic != nil {
 		if err := diagnostic.readTrailer(trailer); err != nil {
 			// A successful write with missing diagnostics must never be replayed.
@@ -614,9 +638,19 @@ func (c *legacyHTTPClient) Apply(
 }
 
 func main() {
+	traceFile := flag.String("trace-file", "", "private exclusive runtime trace output, optional")
+	traceDuration := flag.Duration("trace-duration", 10*time.Second, "bounded trace duration, maximum 30s")
 	parsed, err := parseOptions()
 	if err != nil {
 		log.Fatal(err)
+	}
+	stopTrace := func() {}
+	if *traceFile != "" {
+		stop, err := observe.Start(*traceFile, *traceDuration)
+		if err != nil {
+			log.Fatal(err)
+		}
+		stopTrace = stop
 	}
 	var result output
 	if parsed.LegacyHTTP {
@@ -624,6 +658,7 @@ func main() {
 	} else {
 		result, err = run(context.Background(), parsed)
 	}
+	stopTrace()
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(result); err != nil {
@@ -676,6 +711,7 @@ func runLegacyHTTP(ctx context.Context, options options) (output, error) {
 	result.Benchmark.Iterations = options.Iterations
 	result.Benchmark.Concurrency = options.Concurrency
 	result.Benchmark.Timeout = options.Timeout.Seconds()
+	result.Benchmark.RequestIntervalNS = options.RequestInterval.Nanoseconds()
 
 	run, err := benchmarkLegacyHTTPWrite(
 		ctx, client, initialSample.Permutation, options)
@@ -1034,13 +1070,21 @@ func parallel(
 	var wg sync.WaitGroup
 	for range options.Concurrency {
 		wg.Go(func() {
+			var lastStart time.Time
 			for index := range jobs {
 				if failed.Load() {
 					results[index] = sample{Result: "not_attempted"}
 					continue
 				}
+				if options.RequestInterval > 0 && !lastStart.IsZero() {
+					if wait := time.Until(lastStart.Add(options.RequestInterval)); wait > 0 {
+						time.Sleep(wait)
+					}
+				}
 				callStarted := time.Now()
+				lastStart = callStarted
 				value, err := call(index)
+				value.StartElapsedNS = uint64(callStarted.Sub(started).Nanoseconds())
 				if err != nil {
 					failed.Store(true)
 					results[index] = sample{Result: "error_outcome_unknown", Error: err.Error(), LatencyUS: uint64(time.Since(callStarted).Microseconds())}
@@ -1090,6 +1134,9 @@ func buildResult(
 		ClientLatencyUS: summarize(latencies),
 	}
 	if operation == "read" {
+		if options.RawSamples {
+			result.Samples = samples
+		}
 		return result
 	}
 	if options.RawSamples {
@@ -1351,6 +1398,9 @@ func parsePI(value string) ([]uint32, error) {
 
 func makeClient(protocol string, options options) (benchmarkClient, error) {
 	if protocol == "grpc" {
+		if strings.HasPrefix(options.GRPCTarget, "framed") && (options.Diagnostic || options.GRPCWriteBufferBytes >= 0) {
+			return nil, fmt.Errorf("gRPC diagnostics/buffering options require a gRPC target")
+		}
 		var c *grpcClient
 		var err error
 		if options.GRPCWriteBufferBytes >= 0 || options.Diagnostic {
@@ -1361,6 +1411,9 @@ func makeClient(protocol string, options options) (benchmarkClient, error) {
 		if err == nil {
 			c.compact = options.Compact
 			c.diagnostic = options.Diagnostic
+			if options.RequestInterval > 0 {
+				c.renewInterval = 5 * time.Second
+			}
 		}
 		return c, err
 	}
@@ -1389,10 +1442,11 @@ func parseOptions() (options, error) {
 	transport := flag.String("transport", "native-batch", "sequential or native-batch")
 	warmup := flag.Int("warmup", 10, "warmup calls")
 	iterations := flag.Int("iterations", 100, "measured calls")
+	interval := flag.Duration("request-interval", 0, "minimum interval between starts, serial only; no catch-up bursts")
 	concurrency := flag.Int("concurrency", 1, "parallel calls")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-call timeout")
 	flag.Parse()
-	if *warmup < 0 || *iterations < 1 || *concurrency < 1 {
+	if *warmup < 0 || *iterations < 1 || *concurrency < 1 || *interval < 0 || (*interval > 0 && *concurrency != 1) {
 		return options{}, fmt.Errorf("warmup must be >=0; iterations and concurrency must be >=1")
 	}
 	protocols, err := expand(*protocol, "both", []string{"http", "grpc"})
@@ -1422,18 +1476,19 @@ func parseOptions() (options, error) {
 	parsed := options{
 		ExpectedInitialPI: expectedPI, AlternatePI: alternatePI,
 		RawSamples: *rawSamples, Compact: *compact, Diagnostic: *diagnostic, GRPCWriteBufferBytes: *writeBuffer,
-		RuntimeLabel: *runtimeLabel,
-		GRPCTarget:   *grpcTarget,
-		HTTPTarget:   *httpTarget,
-		LegacyHTTP:   *legacyHTTP,
-		Protocols:    protocols,
-		Operations:   operations,
-		Strategies:   strategies,
-		Transport:    transportName,
-		Warmup:       *warmup,
-		Iterations:   *iterations,
-		Concurrency:  *concurrency,
-		Timeout:      *timeout,
+		RuntimeLabel:    *runtimeLabel,
+		GRPCTarget:      *grpcTarget,
+		HTTPTarget:      *httpTarget,
+		LegacyHTTP:      *legacyHTTP,
+		Protocols:       protocols,
+		Operations:      operations,
+		Strategies:      strategies,
+		Transport:       transportName,
+		Warmup:          *warmup,
+		Iterations:      *iterations,
+		Concurrency:     *concurrency,
+		Timeout:         *timeout,
+		RequestInterval: *interval,
 	}
 	if parsed.GRPCWriteBufferBytes < -1 {
 		return options{}, fmt.Errorf("grpc-write-buffer-bytes must be >= -1")
