@@ -123,6 +123,8 @@ func (s *operationsServer) ApplyBatch(
 	ctx context.Context,
 	request *ocsv1.ApplyBatchRequest,
 ) (*ocsv1.OperationReply, error) {
+	diagnostic := beginApplyDiagnostic(ctx)
+	defer diagnostic.finish(ctx)
 	if !request.GetHasExpectedRevision() {
 		return nil, apierr.GRPC(apierr.New(
 			codes.FailedPrecondition,
@@ -142,6 +144,7 @@ func (s *operationsServer) ApplyBatch(
 		expectedRevision = &value
 	}
 
+	diagnostic.beginCore()
 	var result agent.Result
 	switch intent := request.GetIntent().(type) {
 	case *ocsv1.ApplyBatchRequest_Permutation:
@@ -171,6 +174,7 @@ func (s *operationsServer) ApplyBatch(
 			codes.InvalidArgument,
 			"ApplyBatch requires connection_set or permutation", nil)
 	}
+	diagnostic.endCore()
 	if err != nil {
 		return nil, apierr.GRPC(err)
 	}

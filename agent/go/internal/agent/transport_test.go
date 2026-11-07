@@ -14,6 +14,7 @@ import (
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/config"
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/model"
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/server"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -71,7 +72,7 @@ func TestReusableTransportsShareAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gs := server.NewGRPC(a, config.CapabilityProfile{})
+	gs := server.NewGRPC(a, config.CapabilityProfile{}, grpc.StatsHandler(server.DiagnosticStats{}))
 	defer gs.Stop()
 	go gs.Serve(listener)
 	fast, err := net.Listen("tcp", "127.0.0.1:0")
@@ -98,12 +99,25 @@ func TestReusableTransportsShareAuthority(t *testing.T) {
 				pi = []uint32{2, 1, 4, 3}
 			}
 			request := &ocsv1.ApplyBatchRequest{Intent: &ocsv1.ApplyBatchRequest_Permutation{Permutation: &ocsv1.Permutation{Pi: pi}}, HasExpectedRevision: true, ExpectedRevision: lease.Revision}
-			reply, err := client.ApplyBatch(ctx, request)
+			var trailer metadata.MD
+			var opts []grpc.CallOption
+			if index == 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, "x-ocs-diagnostic", "true")
+				opts = []grpc.CallOption{grpc.Trailer(&trailer)}
+			}
+			reply, err := client.ApplyBatch(ctx, request, opts...)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if reply.Result != "updated" || reply.State.Revision != lease.Revision+1 {
 				t.Fatalf("transport did not commit a real change: %v", reply)
+			}
+			if index == 0 {
+				for _, key := range []string{"x-ocs-handler-ns", "x-ocs-core-call-ns", "x-ocs-pre-core-ns", "x-ocs-reply-ns", "x-ocs-input-ns", "x-ocs-dispatch-ns", "x-ocs-output-ns"} {
+					if len(trailer.Get(key)) != 1 {
+						t.Fatalf("missing diagnostic interval %s: %v", key, trailer)
+					}
+				}
 			}
 			request.ExpectedRevision = reply.State.Revision
 			repeat, err := client.ApplyBatch(ctx, request)

@@ -13,8 +13,9 @@ import (
 func NewGRPC(
 	ocsAgent *agent.Agent,
 	capability config.CapabilityProfile,
+	options ...grpc.ServerOption,
 ) *grpc.Server {
-	server := grpc.NewServer()
+	server := grpc.NewServer(options...)
 	gnmi.RegisterGNMIServer(server, &gnmiServer{
 		agent: ocsAgent, capability: capability,
 	})

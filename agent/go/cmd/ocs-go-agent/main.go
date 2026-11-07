@@ -16,10 +16,12 @@ import (
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/bfrtclient"
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/config"
 	"github.com/reconfig-net-sim/ocs-go-agent/internal/server"
+	"google.golang.org/grpc"
 )
 
 func main() {
 	configPath := flag.String("config", "", "path to Agent JSON configuration")
+	diagnostic := flag.Bool("diagnostic", false, "enable opt-in northbound gRPC stage diagnostics")
 	checkConfig := flag.Bool("check-config", false, "validate configuration without connecting to a device")
 	flag.Parse()
 	if *configPath == "" {
@@ -32,12 +34,12 @@ func main() {
 		fmt.Println("configuration valid; no device connection opened")
 		return
 	}
-	if err := run(*configPath); err != nil {
+	if err := run(*configPath, *diagnostic); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(configPath string) error {
+func run(configPath string, diagnostic bool) error {
 	loaded, err := config.Load(configPath)
 	if err != nil {
 		return err
@@ -74,7 +76,11 @@ func run(configPath string) error {
 	if err != nil {
 		return err
 	}
-	grpcServer := server.NewGRPC(ocsAgent, loaded.CapabilityProfile)
+	var grpcOptions []grpc.ServerOption
+	if diagnostic {
+		grpcOptions = append(grpcOptions, grpc.StatsHandler(server.DiagnosticStats{}))
+	}
+	grpcServer := server.NewGRPC(ocsAgent, loaded.CapabilityProfile, grpcOptions...)
 	defer grpcServer.Stop()
 	defer listener.Close()
 	errCh := make(chan error, 2)

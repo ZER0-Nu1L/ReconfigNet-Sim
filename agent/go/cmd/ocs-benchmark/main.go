@@ -31,6 +31,7 @@ type options struct {
 	AlternatePI       []uint32
 	RawSamples        bool
 	Compact           bool
+	Diagnostic        bool
 	RuntimeLabel      string
 	GRPCTarget        string
 	HTTPTarget        string
@@ -46,7 +47,8 @@ type options struct {
 }
 
 type sample struct {
-	Error                  string `json:"error,omitempty"`
+	Diagnostic             *northboundDiagnostic `json:"northbound_diagnostic,omitempty"`
+	Error                  string                `json:"error,omitempty"`
 	ClientQueueUS          uint64
 	SouthboundQueueUS      uint64
 	RequestID              uint64
@@ -123,6 +125,7 @@ type output struct {
 	Benchmark    struct {
 		ExpectedInitialPI []uint32 `json:"expected_initial_pi,omitempty"`
 		AlternatePI       []uint32 `json:"alternate_pi,omitempty"`
+		Diagnostic        bool     `json:"diagnostic"`
 		Compact           bool     `json:"compact"`
 		Protocols         []string `json:"protocol_order"`
 		Operations        []string `json:"operations"`
@@ -153,6 +156,7 @@ type benchmarkClient interface {
 type grpcClient struct {
 	connection   ocsclient.Connection
 	compact      bool
+	diagnostic   bool
 	client       ocsv1.OcsOperationsClient
 	mu           sync.Mutex
 	leaseToken   string
@@ -251,7 +255,15 @@ func (c *grpcClient) Apply(
 	if c.compact {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-ocs-compact-reply", "true")
 	}
-	response, err := c.client.ApplyBatch(metadata.AppendToOutgoingContext(ctx, "x-ocs-control-lease", c.leaseToken), request)
+	var trailer metadata.MD
+	var diagnostic *northboundDiagnostic
+	var callOptions []grpc.CallOption
+	if c.diagnostic {
+		diagnostic = &northboundDiagnostic{}
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-ocs-diagnostic", "true")
+		callOptions = []grpc.CallOption{grpc.Trailer(&trailer), grpc.ForceCodecV2(newTimedCodec(diagnostic))}
+	}
+	response, err := c.client.ApplyBatch(metadata.AppendToOutgoingContext(ctx, "x-ocs-control-lease", c.leaseToken), request, callOptions...)
 	if err != nil {
 		c.writeFailure = err
 		return sample{}, err
@@ -259,8 +271,16 @@ func (c *grpcClient) Apply(
 
 	rpcUS := uint64(time.Since(rpcStarted).Microseconds())
 	c.revision = response.GetState().GetRevision()
+	if diagnostic != nil {
+		if err := diagnostic.readTrailer(trailer); err != nil {
+			// A successful write with missing diagnostics must never be replayed.
+			c.writeFailure = err
+			return sample{}, err
+		}
+	}
 	timing := response.GetTiming()
 	return sample{
+		Diagnostic:        diagnostic,
 		ClientQueueUS:     clientQueueUS,
 		SouthboundQueueUS: timing.GetSouthboundQueueWaitUs(),
 		RequestID:         response.GetRequestId(), Revision: response.GetState().GetRevision(),
@@ -808,6 +828,7 @@ func run(ctx context.Context, options options) (output, error) {
 	result.Benchmark.ExpectedInitialPI = slices.Clone(options.ExpectedInitialPI)
 	result.Benchmark.AlternatePI = slices.Clone(options.AlternatePI)
 	result.Benchmark.Compact = options.Compact
+	result.Benchmark.Diagnostic = options.Diagnostic
 
 	for _, protocol := range options.Protocols {
 		client, err := makeClient(protocol, options)
@@ -1325,6 +1346,7 @@ func makeClient(protocol string, options options) (benchmarkClient, error) {
 		c, err := newGRPCClient(options.GRPCTarget)
 		if err == nil {
 			c.compact = options.Compact
+			c.diagnostic = options.Diagnostic
 		}
 		return c, err
 	}
@@ -1338,6 +1360,7 @@ func parseOptions() (options, error) {
 	expectedInitial := flag.String("expected-initial-pi", "", "require this comma-separated initial matching before scoped writes")
 	alternate := flag.String("alternate-pi", "", "alternate only this matching with --expected-initial-pi; requires write and concurrency=1")
 	rawSamples := flag.Bool("raw-samples", false, "include per-request correlated timing samples")
+	diagnostic := flag.Bool("diagnostic", false, "opt-in gRPC handler/Core and client codec timing; adds trailers and measurement overhead")
 	compact := flag.Bool("compact", false, "request compact ApplyBatch replies")
 	runtimeLabel := flag.String("runtime", "unspecified", "agent runtime label")
 	grpcTarget := flag.String("grpc-target", "127.0.0.1:9339", "OcsOperations target")
@@ -1383,7 +1406,7 @@ func parseOptions() (options, error) {
 	}
 	parsed := options{
 		ExpectedInitialPI: expectedPI, AlternatePI: alternatePI,
-		RawSamples: *rawSamples, Compact: *compact,
+		RawSamples: *rawSamples, Compact: *compact, Diagnostic: *diagnostic,
 		RuntimeLabel: *runtimeLabel,
 		GRPCTarget:   *grpcTarget,
 		HTTPTarget:   *httpTarget,
@@ -1396,6 +1419,9 @@ func parseOptions() (options, error) {
 		Iterations:   *iterations,
 		Concurrency:  *concurrency,
 		Timeout:      *timeout,
+	}
+	if parsed.Diagnostic && (parsed.Concurrency != 1 || len(parsed.Protocols) != 1 || parsed.Protocols[0] != "grpc" || strings.HasPrefix(parsed.GRPCTarget, "framed")) {
+		return options{}, fmt.Errorf("diagnostic requires gRPC and concurrency=1")
 	}
 	if err := validateMappingScope(expectedPI, parsed); err != nil {
 		return options{}, err
