@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"google.golang.org/grpc/stats"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc/encoding"
@@ -11,6 +14,14 @@ import (
 )
 
 type northboundDiagnostic struct {
+	RPCNS       uint64 `json:"client_rpc_ns"`
+	SendNS      uint64 `json:"client_send_elapsed_ns"`
+	ReceiveNS   uint64 `json:"client_receive_elapsed_ns"`
+	HeaderNS    uint64 `json:"client_header_elapsed_ns"`
+	rpcStarted  time.Time
+	sent        atomic.Int64
+	received    atomic.Int64
+	header      atomic.Int64
 	InputNS     uint64 `json:"server_input_ns"`
 	DispatchNS  uint64 `json:"server_dispatch_ns"`
 	OutputNS    uint64 `json:"server_output_ns"`
@@ -79,4 +90,35 @@ func (c *timedCodec) Unmarshal(data mem.BufferSlice, value any) error {
 	err := c.CodecV2.Unmarshal(data, value)
 	c.timing.UnmarshalNS += uint64(time.Since(started).Nanoseconds())
 	return err
+}
+
+type clientDiagnosticKey struct{}
+type clientDiagnosticStats struct{}
+
+func (clientDiagnosticStats) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
+	return ctx
+}
+func (clientDiagnosticStats) HandleRPC(ctx context.Context, event stats.RPCStats) {
+	d, _ := ctx.Value(clientDiagnosticKey{}).(*northboundDiagnostic)
+	if d == nil {
+		return
+	}
+	switch e := event.(type) {
+	case *stats.OutPayload:
+		d.sent.Store(e.SentTime.Sub(d.rpcStarted).Nanoseconds())
+	case *stats.InPayload:
+		d.received.Store(e.RecvTime.Sub(d.rpcStarted).Nanoseconds())
+	case *stats.InHeader:
+		d.header.Store(time.Since(d.rpcStarted).Nanoseconds())
+	}
+}
+func (clientDiagnosticStats) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+func (clientDiagnosticStats) HandleConn(context.Context, stats.ConnStats) {}
+func (d *northboundDiagnostic) finishClient(elapsed time.Duration) {
+	d.RPCNS = uint64(elapsed.Nanoseconds())
+	d.SendNS = uint64(d.sent.Load())
+	d.ReceiveNS = uint64(d.received.Load())
+	d.HeaderNS = uint64(d.header.Load())
 }

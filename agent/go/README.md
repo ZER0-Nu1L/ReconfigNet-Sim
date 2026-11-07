@@ -29,3 +29,9 @@ The benchmark also accepts `--grpc-write-buffer-bytes=0` to compare client-side
 HTTP/2 write buffering against `-1` (the library default). This affects only the
 benchmark's persistent gRPC connection; it neither changes the Agent nor the
 BFRT connection. Measure it against an otherwise identical uninstrumented run.
+
+Diagnostic clients additionally record elapsed time from invocation to gRPC's
+OutPayload, InHeader and InPayload events. OutPayload follows transport enqueue;
+InPayload follows response decoding. These client markers locate delay within
+the invocation but can overlap remote server intervals, so do not add them to a
+server timing pie. Only durations are compared across machines.

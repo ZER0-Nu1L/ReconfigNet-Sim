@@ -261,7 +261,8 @@ func (c *grpcClient) Apply(
 	var diagnostic *northboundDiagnostic
 	var callOptions []grpc.CallOption
 	if c.diagnostic {
-		diagnostic = &northboundDiagnostic{}
+		diagnostic = &northboundDiagnostic{rpcStarted: rpcStarted}
+		ctx = context.WithValue(ctx, clientDiagnosticKey{}, diagnostic)
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-ocs-diagnostic", "true")
 		callOptions = []grpc.CallOption{grpc.Trailer(&trailer), grpc.ForceCodecV2(newTimedCodec(diagnostic))}
 	}
@@ -271,7 +272,11 @@ func (c *grpcClient) Apply(
 		return sample{}, err
 	}
 
-	rpcUS := uint64(time.Since(rpcStarted).Microseconds())
+	rpcDuration := time.Since(rpcStarted)
+	rpcUS := uint64(rpcDuration.Microseconds())
+	if diagnostic != nil {
+		diagnostic.finishClient(rpcDuration)
+	}
 	c.revision = response.GetState().GetRevision()
 	if diagnostic != nil {
 		if err := diagnostic.readTrailer(trailer); err != nil {
@@ -1348,8 +1353,8 @@ func makeClient(protocol string, options options) (benchmarkClient, error) {
 	if protocol == "grpc" {
 		var c *grpcClient
 		var err error
-		if options.GRPCWriteBufferBytes >= 0 {
-			c, err = newBufferedGRPCClient(options.GRPCTarget, options.GRPCWriteBufferBytes)
+		if options.GRPCWriteBufferBytes >= 0 || options.Diagnostic {
+			c, err = newConfiguredGRPCClient(options.GRPCTarget, options.GRPCWriteBufferBytes, options.Diagnostic)
 		} else {
 			c, err = newGRPCClient(options.GRPCTarget)
 		}
