@@ -5,6 +5,18 @@ a fake BFRT service; the pinned model also checks the full Agent path.
 Performance qualification and long-running acceptance are deployment-specific.
 Historical local benchmark numbers do not describe an external-host path.
 
+For a write benchmark limited to two reviewed matchings, supply both
+`--expected-initial-pi` and `--alternate-pi` to `ocs-benchmark`, with
+`--operation write --concurrency 1 --raw-samples`. Values are comma-separated
+logical port permutations with symmetric non-self pairs. The benchmark checks
+the initial mapping before acquiring control and again after acquiring the
+lease, before any setup write. It alternates only those two matchings and restores
+the initial mapping on normal completion. An uncertain write stops the run
+without automatic replay or restoration; inspect hardware and recover explicitly.
+The JSON records the selected mappings, compact-reply setting and successful
+write targets. Omitting these flags retains automatic matching selection for
+existing model experiments; it is unsuitable for a restricted physical window.
+
 ## Execution path
 
 An experiment runs its client on an external host and submits connection goals:

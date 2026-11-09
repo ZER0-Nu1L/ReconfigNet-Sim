@@ -13,7 +13,9 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/trace"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,29 +23,37 @@ import (
 
 	ocsclient "github.com/reconfig-net-sim/ocs-go-agent/client"
 	ocsv1 "github.com/reconfig-net-sim/ocs-go-agent/gen/ocsv1"
+	"github.com/reconfig-net-sim/ocs-go-agent/internal/observe"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
 type options struct {
-	RawSamples   bool
-	Compact      bool
-	RuntimeLabel string
-	GRPCTarget   string
-	HTTPTarget   string
-	LegacyHTTP   bool
-	Protocols    []string
-	Operations   []string
-	Strategies   []string
-	Transport    string
-	Warmup       int
-	Iterations   int
-	Concurrency  int
-	Timeout      time.Duration
+	ExpectedInitialPI    []uint32
+	AlternatePI          []uint32
+	RawSamples           bool
+	Compact              bool
+	Diagnostic           bool
+	GRPCWriteBufferBytes int
+	RuntimeLabel         string
+	GRPCTarget           string
+	HTTPTarget           string
+	LegacyHTTP           bool
+	Protocols            []string
+	Operations           []string
+	Strategies           []string
+	Transport            string
+	Warmup               int
+	Iterations           int
+	Concurrency          int
+	Timeout              time.Duration
+	RequestInterval      time.Duration
 }
 
 type sample struct {
-	Error                  string `json:"error,omitempty"`
+	Diagnostic             *northboundDiagnostic `json:"northbound_diagnostic,omitempty"`
+	StartElapsedNS         uint64                `json:"start_elapsed_ns,omitzero"`
+	Error                  string                `json:"error,omitempty"`
 	ClientQueueUS          uint64
 	SouthboundQueueUS      uint64
 	RequestID              uint64
@@ -118,14 +128,20 @@ type runResult struct {
 type output struct {
 	RuntimeLabel string `json:"runtime_label"`
 	Benchmark    struct {
-		Protocols   []string `json:"protocol_order"`
-		Operations  []string `json:"operations"`
-		Strategies  []string `json:"strategies"`
-		Transport   string   `json:"transport"`
-		Warmup      int      `json:"warmup"`
-		Iterations  int      `json:"iterations"`
-		Concurrency int      `json:"concurrency"`
-		Timeout     float64  `json:"timeout_seconds"`
+		ExpectedInitialPI    []uint32 `json:"expected_initial_pi,omitempty"`
+		AlternatePI          []uint32 `json:"alternate_pi,omitempty"`
+		GRPCWriteBufferBytes int      `json:"grpc_write_buffer_bytes"`
+		Diagnostic           bool     `json:"diagnostic"`
+		Compact              bool     `json:"compact"`
+		Protocols            []string `json:"protocol_order"`
+		Operations           []string `json:"operations"`
+		Strategies           []string `json:"strategies"`
+		Transport            string   `json:"transport"`
+		Warmup               int      `json:"warmup"`
+		Iterations           int      `json:"iterations"`
+		Concurrency          int      `json:"concurrency"`
+		Timeout              float64  `json:"timeout_seconds"`
+		RequestIntervalNS    int64    `json:"request_interval_ns,omitzero"`
 	} `json:"benchmark"`
 	ClientRuntime map[string]string `json:"client_runtime"`
 	GRPCTarget    string            `json:"grpc_target"`
@@ -145,13 +161,16 @@ type benchmarkClient interface {
 }
 
 type grpcClient struct {
-	connection   ocsclient.Connection
-	compact      bool
-	client       ocsv1.OcsOperationsClient
-	mu           sync.Mutex
-	leaseToken   string
-	revision     uint64
-	writeFailure error
+	connection    ocsclient.Connection
+	compact       bool
+	diagnostic    bool
+	client        ocsv1.OcsOperationsClient
+	mu            sync.Mutex
+	leaseToken    string
+	revision      uint64
+	writeFailure  error
+	renewInterval time.Duration
+	nextRenew     time.Time
 }
 
 var errWriteClientStopped = errors.New("write not attempted: client stopped after earlier failure")
@@ -165,6 +184,7 @@ func (c *grpcClient) Acquire(ctx context.Context) error {
 	}
 	c.leaseToken = lease.GetLeaseToken()
 	c.revision = lease.GetRevision()
+	c.nextRenew = time.Now().Add(c.renewInterval)
 	return nil
 }
 
@@ -223,11 +243,24 @@ func (c *grpcClient) Apply(
 	strategy string,
 	transport string,
 ) (sample, error) {
+	if trace.IsEnabled() {
+		var task *trace.Task
+		ctx, task = trace.NewTask(ctx, "client.ApplyBatch")
+		defer task.End()
+	}
 	totalStarted := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.writeFailure != nil {
 		return sample{}, fmt.Errorf("%w: %v", errWriteClientStopped, c.writeFailure)
+	}
+	if c.renewInterval > 0 && !time.Now().Before(c.nextRenew) {
+		_, err := c.client.RenewControl(ctx, &ocsv1.RenewControlRequest{LeaseToken: c.leaseToken})
+		if err != nil {
+			c.writeFailure = err
+			return sample{}, err
+		}
+		c.nextRenew = time.Now().Add(c.renewInterval)
 	}
 	prepareStarted := time.Now()
 	clientQueueUS := uint64(time.Since(totalStarted).Microseconds())
@@ -245,16 +278,40 @@ func (c *grpcClient) Apply(
 	if c.compact {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-ocs-compact-reply", "true")
 	}
-	response, err := c.client.ApplyBatch(metadata.AppendToOutgoingContext(ctx, "x-ocs-control-lease", c.leaseToken), request)
+	var trailer metadata.MD
+	var diagnostic *northboundDiagnostic
+	var callOptions []grpc.CallOption
+	if c.diagnostic {
+		diagnostic = &northboundDiagnostic{rpcStarted: rpcStarted}
+		ctx = context.WithValue(ctx, clientDiagnosticKey{}, diagnostic)
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-ocs-diagnostic", "true")
+		callOptions = []grpc.CallOption{grpc.Trailer(&trailer), grpc.ForceCodecV2(newTimedCodec(diagnostic))}
+	}
+	response, err := c.client.ApplyBatch(metadata.AppendToOutgoingContext(ctx, "x-ocs-control-lease", c.leaseToken), request, callOptions...)
 	if err != nil {
 		c.writeFailure = err
 		return sample{}, err
 	}
 
-	rpcUS := uint64(time.Since(rpcStarted).Microseconds())
+	rpcDuration := time.Since(rpcStarted)
+	rpcUS := uint64(rpcDuration.Microseconds())
+	if diagnostic != nil {
+		diagnostic.finishClient(rpcDuration)
+	}
 	c.revision = response.GetState().GetRevision()
+	if trace.IsEnabled() {
+		trace.Logf(ctx, "ocs", "request=%d revision=%d", response.GetRequestId(), c.revision)
+	}
+	if diagnostic != nil {
+		if err := diagnostic.readTrailer(trailer); err != nil {
+			// A successful write with missing diagnostics must never be replayed.
+			c.writeFailure = err
+			return sample{}, err
+		}
+	}
 	timing := response.GetTiming()
 	return sample{
+		Diagnostic:        diagnostic,
 		ClientQueueUS:     clientQueueUS,
 		SouthboundQueueUS: timing.GetSouthboundQueueWaitUs(),
 		RequestID:         response.GetRequestId(), Revision: response.GetState().GetRevision(),
@@ -581,9 +638,19 @@ func (c *legacyHTTPClient) Apply(
 }
 
 func main() {
+	traceFile := flag.String("trace-file", "", "private exclusive runtime trace output, optional")
+	traceDuration := flag.Duration("trace-duration", 10*time.Second, "bounded trace duration, maximum 30s")
 	parsed, err := parseOptions()
 	if err != nil {
 		log.Fatal(err)
+	}
+	stopTrace := func() {}
+	if *traceFile != "" {
+		stop, err := observe.Start(*traceFile, *traceDuration)
+		if err != nil {
+			log.Fatal(err)
+		}
+		stopTrace = stop
 	}
 	var result output
 	if parsed.LegacyHTTP {
@@ -591,6 +658,7 @@ func main() {
 	} else {
 		result, err = run(context.Background(), parsed)
 	}
+	stopTrace()
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(result); err != nil {
@@ -602,6 +670,9 @@ func main() {
 }
 
 func runLegacyHTTP(ctx context.Context, options options) (output, error) {
+	if len(options.ExpectedInitialPI) > 0 || len(options.AlternatePI) > 0 {
+		return output{}, fmt.Errorf("explicit mapping scope is supported only by the maintained Agent API")
+	}
 	client := newLegacyHTTPClient(options.HTTPTarget, options.Concurrency)
 	defer client.Close()
 	requestContext, cancel := context.WithTimeout(ctx, options.Timeout)
@@ -640,6 +711,7 @@ func runLegacyHTTP(ctx context.Context, options options) (output, error) {
 	result.Benchmark.Iterations = options.Iterations
 	result.Benchmark.Concurrency = options.Concurrency
 	result.Benchmark.Timeout = options.Timeout.Seconds()
+	result.Benchmark.RequestIntervalNS = options.RequestInterval.Nanoseconds()
 
 	run, err := benchmarkLegacyHTTPWrite(
 		ctx, client, initialSample.Permutation, options)
@@ -764,6 +836,9 @@ func run(ctx context.Context, options options) (output, error) {
 	if err := validatePermutation(initialSample.Permutation); err != nil {
 		return output{}, err
 	}
+	if err := validateMappingScope(initialSample.Permutation, options); err != nil {
+		return output{}, err
+	}
 	requestContext, cancel = context.WithTimeout(ctx, options.Timeout)
 	backend, err := discovery.Runtime(requestContext)
 	cancel()
@@ -793,6 +868,11 @@ func run(ctx context.Context, options options) (output, error) {
 	result.Benchmark.Iterations = options.Iterations
 	result.Benchmark.Concurrency = options.Concurrency
 	result.Benchmark.Timeout = options.Timeout.Seconds()
+	result.Benchmark.ExpectedInitialPI = slices.Clone(options.ExpectedInitialPI)
+	result.Benchmark.AlternatePI = slices.Clone(options.AlternatePI)
+	result.Benchmark.Compact = options.Compact
+	result.Benchmark.Diagnostic = options.Diagnostic
+	result.Benchmark.GRPCWriteBufferBytes = options.GRPCWriteBufferBytes
 
 	for _, protocol := range options.Protocols {
 		client, err := makeClient(protocol, options)
@@ -827,6 +907,18 @@ func runProtocol(
 	initial []uint32,
 	options options,
 ) ([]runResult, error) {
+	if len(options.ExpectedInitialPI) > 0 {
+		// Recheck after acquiring the lease, before even a setup/no-op write.
+		requestContext, cancel := context.WithTimeout(ctx, options.Timeout)
+		current, err := client.Permutation(requestContext)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+		if err := validateMappingScope(current.Permutation, options); err != nil {
+			return nil, err
+		}
+	}
 	runs := make([]runResult, 0)
 	if slices.Contains(options.Operations, "read") {
 		run, err := benchmarkRead(ctx, client, protocol, options)
@@ -886,19 +978,29 @@ func benchmarkApply(
 	strategy string,
 	options options,
 ) (runResult, error) {
+	if err := validateMappingScope(initial, options); err != nil {
+		return runResult{}, err
+	}
 	if err := applyOnce(ctx, client, initial, strategy, options); err != nil {
 		return runResult{}, err
 	}
-	allMappings := matchingPermutations(len(initial))
-	candidates := make([][]uint32, 0, len(allMappings)-1)
-	for _, candidate := range allMappings {
-		if !slices.Equal(candidate, initial) {
-			candidates = append(candidates, candidate)
+	var candidates [][]uint32
+	if len(options.AlternatePI) > 0 {
+		candidates = [][]uint32{slices.Clone(options.AlternatePI), slices.Clone(initial)}
+	} else {
+		allMappings := matchingPermutations(len(initial))
+		for _, candidate := range allMappings {
+			if !slices.Equal(candidate, initial) {
+				candidates = append(candidates, candidate)
+			}
 		}
 	}
 	if operation == "noop" {
 		candidates = [][]uint32{initial}
 	} else if options.Concurrency == 1 {
+		if len(candidates) == 0 {
+			return runResult{}, fmt.Errorf("write benchmark requires a distinct matching")
+		}
 		candidates = [][]uint32{candidates[0], initial}
 	} else if options.Iterations > len(candidates) {
 		return runResult{}, fmt.Errorf(
@@ -916,9 +1018,13 @@ func benchmarkApply(
 	samples, elapsed, err := parallel(options, func(index int) (sample, error) {
 		requestContext, cancel := context.WithTimeout(ctx, options.Timeout)
 		defer cancel()
-		return client.Apply(
+		value, err := client.Apply(
 			requestContext, candidates[index%len(candidates)],
 			strategy, options.Transport)
+		if len(options.AlternatePI) > 0 {
+			value.Permutation = slices.Clone(candidates[index%len(candidates)])
+		}
+		return value, err
 	})
 	if err != nil {
 		options.RawSamples = true
@@ -964,13 +1070,21 @@ func parallel(
 	var wg sync.WaitGroup
 	for range options.Concurrency {
 		wg.Go(func() {
+			var lastStart time.Time
 			for index := range jobs {
 				if failed.Load() {
 					results[index] = sample{Result: "not_attempted"}
 					continue
 				}
+				if options.RequestInterval > 0 && !lastStart.IsZero() {
+					if wait := time.Until(lastStart.Add(options.RequestInterval)); wait > 0 {
+						time.Sleep(wait)
+					}
+				}
 				callStarted := time.Now()
+				lastStart = callStarted
 				value, err := call(index)
+				value.StartElapsedNS = uint64(callStarted.Sub(started).Nanoseconds())
 				if err != nil {
 					failed.Store(true)
 					results[index] = sample{Result: "error_outcome_unknown", Error: err.Error(), LatencyUS: uint64(time.Since(callStarted).Microseconds())}
@@ -1020,6 +1134,9 @@ func buildResult(
 		ClientLatencyUS: summarize(latencies),
 	}
 	if operation == "read" {
+		if options.RawSamples {
+			result.Samples = samples
+		}
 		return result
 	}
 	if options.RawSamples {
@@ -1239,11 +1356,64 @@ func validatePermutation(permutation []uint32) error {
 	return nil
 }
 
+func validateMappingScope(initial []uint32, options options) error {
+	if len(options.ExpectedInitialPI) == 0 && len(options.AlternatePI) == 0 {
+		return nil
+	}
+	if options.LegacyHTTP || options.Concurrency != 1 ||
+		!slices.Equal(options.Operations, []string{"write"}) {
+		return fmt.Errorf("explicit mapping scope requires maintained API, operation=write and concurrency=1")
+	}
+	for _, pi := range [][]uint32{options.ExpectedInitialPI, options.AlternatePI} {
+		if err := validatePermutation(pi); err != nil {
+			return fmt.Errorf("both --expected-initial-pi and --alternate-pi must be valid matchings: %w", err)
+		}
+		if len(pi) != len(initial) {
+			return fmt.Errorf("scoped matching size differs from observed device mapping")
+		}
+	}
+	if !slices.Equal(initial, options.ExpectedInitialPI) {
+		return fmt.Errorf("observed initial mapping differs from --expected-initial-pi; no write attempted")
+	}
+	if slices.Equal(initial, options.AlternatePI) {
+		return fmt.Errorf("--alternate-pi must differ from the initial mapping")
+	}
+	return nil
+}
+
+func parsePI(value string) ([]uint32, error) {
+	if value == "" {
+		return nil, nil
+	}
+	var pi []uint32
+	for item := range strings.SplitSeq(value, ",") {
+		port, err := strconv.ParseUint(strings.TrimSpace(item), 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid matching port %q: %w", item, err)
+		}
+		pi = append(pi, uint32(port))
+	}
+	return pi, validatePermutation(pi)
+}
+
 func makeClient(protocol string, options options) (benchmarkClient, error) {
 	if protocol == "grpc" {
-		c, err := newGRPCClient(options.GRPCTarget)
+		if strings.HasPrefix(options.GRPCTarget, "framed") && (options.Diagnostic || options.GRPCWriteBufferBytes >= 0) {
+			return nil, fmt.Errorf("gRPC diagnostics/buffering options require a gRPC target")
+		}
+		var c *grpcClient
+		var err error
+		if options.GRPCWriteBufferBytes >= 0 || options.Diagnostic {
+			c, err = newConfiguredGRPCClient(options.GRPCTarget, options.GRPCWriteBufferBytes, options.Diagnostic)
+		} else {
+			c, err = newGRPCClient(options.GRPCTarget)
+		}
 		if err == nil {
 			c.compact = options.Compact
+			c.diagnostic = options.Diagnostic
+			if options.RequestInterval > 0 {
+				c.renewInterval = 5 * time.Second
+			}
 		}
 		return c, err
 	}
@@ -1254,7 +1424,11 @@ func makeClient(protocol string, options options) (benchmarkClient, error) {
 }
 
 func parseOptions() (options, error) {
+	expectedInitial := flag.String("expected-initial-pi", "", "require this comma-separated initial matching before scoped writes")
+	alternate := flag.String("alternate-pi", "", "alternate only this matching with --expected-initial-pi; requires write and concurrency=1")
 	rawSamples := flag.Bool("raw-samples", false, "include per-request correlated timing samples")
+	writeBuffer := flag.Int("grpc-write-buffer-bytes", -1, "client gRPC write buffer; -1 keeps library default, 0 disables buffering")
+	diagnostic := flag.Bool("diagnostic", false, "opt-in gRPC handler/Core and client codec timing; adds trailers and measurement overhead")
 	compact := flag.Bool("compact", false, "request compact ApplyBatch replies")
 	runtimeLabel := flag.String("runtime", "unspecified", "agent runtime label")
 	grpcTarget := flag.String("grpc-target", "127.0.0.1:9339", "OcsOperations target")
@@ -1268,10 +1442,11 @@ func parseOptions() (options, error) {
 	transport := flag.String("transport", "native-batch", "sequential or native-batch")
 	warmup := flag.Int("warmup", 10, "warmup calls")
 	iterations := flag.Int("iterations", 100, "measured calls")
+	interval := flag.Duration("request-interval", 0, "minimum interval between starts, serial only; no catch-up bursts")
 	concurrency := flag.Int("concurrency", 1, "parallel calls")
 	timeout := flag.Duration("timeout", 10*time.Second, "per-call timeout")
 	flag.Parse()
-	if *warmup < 0 || *iterations < 1 || *concurrency < 1 {
+	if *warmup < 0 || *iterations < 1 || *concurrency < 1 || *interval < 0 || (*interval > 0 && *concurrency != 1) {
 		return options{}, fmt.Errorf("warmup must be >=0; iterations and concurrency must be >=1")
 	}
 	protocols, err := expand(*protocol, "both", []string{"http", "grpc"})
@@ -1290,21 +1465,44 @@ func parseOptions() (options, error) {
 	if transportName != "SEQUENTIAL" && transportName != "NATIVE_BATCH" {
 		return options{}, fmt.Errorf("transport must be sequential or native-batch")
 	}
-	return options{
-		RawSamples: *rawSamples, Compact: *compact,
-		RuntimeLabel: *runtimeLabel,
-		GRPCTarget:   *grpcTarget,
-		HTTPTarget:   *httpTarget,
-		LegacyHTTP:   *legacyHTTP,
-		Protocols:    protocols,
-		Operations:   operations,
-		Strategies:   strategies,
-		Transport:    transportName,
-		Warmup:       *warmup,
-		Iterations:   *iterations,
-		Concurrency:  *concurrency,
-		Timeout:      *timeout,
-	}, nil
+	expectedPI, err := parsePI(*expectedInitial)
+	if err != nil {
+		return options{}, err
+	}
+	alternatePI, err := parsePI(*alternate)
+	if err != nil {
+		return options{}, err
+	}
+	parsed := options{
+		ExpectedInitialPI: expectedPI, AlternatePI: alternatePI,
+		RawSamples: *rawSamples, Compact: *compact, Diagnostic: *diagnostic, GRPCWriteBufferBytes: *writeBuffer,
+		RuntimeLabel:    *runtimeLabel,
+		GRPCTarget:      *grpcTarget,
+		HTTPTarget:      *httpTarget,
+		LegacyHTTP:      *legacyHTTP,
+		Protocols:       protocols,
+		Operations:      operations,
+		Strategies:      strategies,
+		Transport:       transportName,
+		Warmup:          *warmup,
+		Iterations:      *iterations,
+		Concurrency:     *concurrency,
+		Timeout:         *timeout,
+		RequestInterval: *interval,
+	}
+	if parsed.GRPCWriteBufferBytes < -1 {
+		return options{}, fmt.Errorf("grpc-write-buffer-bytes must be >= -1")
+	}
+	if parsed.GRPCWriteBufferBytes >= 0 && (len(parsed.Protocols) != 1 || parsed.Protocols[0] != "grpc" || strings.HasPrefix(parsed.GRPCTarget, "framed")) {
+		return options{}, fmt.Errorf("grpc-write-buffer-bytes requires gRPC")
+	}
+	if parsed.Diagnostic && (parsed.Concurrency != 1 || len(parsed.Protocols) != 1 || parsed.Protocols[0] != "grpc" || strings.HasPrefix(parsed.GRPCTarget, "framed")) {
+		return options{}, fmt.Errorf("diagnostic requires gRPC and concurrency=1")
+	}
+	if err := validateMappingScope(expectedPI, parsed); err != nil {
+		return options{}, err
+	}
+	return parsed, nil
 }
 
 func expand(value, all string, choices []string) ([]string, error) {

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"runtime/trace"
 	"slices"
 	"strings"
 	"sync"
@@ -661,8 +662,10 @@ func (a *Agent) applyConnectionsAcquired(
 	a.state.status = "updating"
 	a.mu.Unlock()
 
+	region := trace.StartRegion(ctx, "BFRT.Apply")
 	backendTiming, backendErr := a.backend.Apply(
 		ctx, previousPairs, targetPairs, strategy, transport, delayUS)
+	region.End()
 	timing := timingFromBackend(backendTiming)
 	timing.QueueWaitUS = queueWaitUS
 	timing.ValidationUS = validationUS
@@ -740,10 +743,14 @@ func (a *Agent) reconcileLoop(ctx context.Context) {
 }
 
 func (a *Agent) ReconcileDeviceState(ctx context.Context) (DeviceState, error) {
+	ctx, task := trace.NewTask(ctx, "Core.Reconcile")
+	defer task.End()
 	if err := a.acquire(ctx); err != nil {
 		return DeviceState{}, err
 	}
 	defer a.release()
+	region := trace.StartRegion(ctx, "reconcile.hold")
+	defer region.End()
 	a.mu.RLock()
 	desired := maps.Clone(a.currentPairsLocked())
 	a.mu.RUnlock()
@@ -839,6 +846,8 @@ func (a *Agent) resultLocked(requestID, received uint64, result string, timing T
 }
 
 func (a *Agent) acquire(ctx context.Context) error {
+	region := trace.StartRegion(ctx, "commit.wait")
+	defer region.End()
 	select {
 	case a.commit <- struct{}{}:
 		return nil
