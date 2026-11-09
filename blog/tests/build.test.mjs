@@ -31,6 +31,10 @@ test('production build renders Markdown features and excludes draft content ever
     const result = spawnSync('npm', ['run', 'build'], { cwd: root, encoding: 'utf8', timeout: 100000, env: { ...process.env, ASTRO_TELEMETRY_DISABLED: '1' } });
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const dist = path.join(root, 'dist');
+    const sitemap = await readFile(path.join(dist, 'sitemap-0.xml'), 'utf8');
+    assert.doesNotMatch(sitemap, /<loc>https:\/\/zer0-nu1l\.github\.io\/ReconfigNet-Sim\/<\/loc>/);
+    assert.doesNotMatch(sitemap, /\/404\//);
+    assert.match(sitemap, /<loc>https:\/\/zer0-nu1l\.github\.io\/ReconfigNet-Sim\/en\/<\/loc>/);
     const article = await readFile(path.join(dist, 'en/posts/format-check/index.html'), 'utf8');
     for (const pattern of [/<table>/, /<pre[^>]*class="[^"]*astro-code/, /id="format-check"/, /href="#format-check"/, /data-footnotes/, /<img[^>]*alt="Project mark"/]) assert.match(article, pattern);
     for (const pattern of [/By: <span>Example Author<\/span>/, /Published <time datetime="2026-09-15"/, /Enjoy the blog\?/, /--shiki-light:/, /--shiki-dark:/, /--shiki-light-bg:/, /--shiki-dark-bg:/]) assert.match(article, pattern);
