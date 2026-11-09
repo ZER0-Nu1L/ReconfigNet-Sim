@@ -7,12 +7,22 @@ import articleFormatting from './src/plugins/remark-article.mjs';
 import math from 'remark-math';
 import katex from 'rehype-katex';
 
+const site = 'https://zer0-nu1l.github.io';
+const base = '/ReconfigNet-Sim';
+
+// `/` is a client-side redirect to `/en/`, so Search Console reports it as
+// "Page with redirect" and never indexes it. Keep it out of the sitemap.
+const isIndexablePage = (page) => {
+  const { pathname } = new URL(page);
+  return !pathname.endsWith('/404/') && pathname !== `${base}/`;
+};
+
 export default defineConfig({
-  site: 'https://zer0-nu1l.github.io',
-  base: '/ReconfigNet-Sim',
+  site,
+  base,
   trailingSlash: 'always',
   output: 'static',
-  integrations: [sitemap({ filter: (page) => !page.endsWith('/404/') })],
+  integrations: [sitemap({ filter: isIndexablePage })],
   markdown: {
     shikiConfig: { themes: { light: 'github-light', dark: 'github-dark' }, defaultColor: false },
     processor: unified({ remarkPlugins: [articleFormatting, math], rehypePlugins: [katex, slug, [autolink, { behavior: 'wrap' }]] }),

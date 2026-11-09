@@ -105,6 +105,14 @@ Once verified, submit
 under **Sitemaps**, then use **URL inspection** to request indexing for the
 English and Chinese article URLs. Google decides whether and when to index them.
 
+### Redirecting root
+
+The site root `https://zer0-nu1l.github.io/ReconfigNet-Sim/` is a client-side
+redirect to `/en/`. Search Console therefore lists it under **Page indexing →
+Page with redirect** ("网页会自动重定向") and never indexes it; that status is
+expected and is not an indexing failure. `astro.config.mjs` keeps the root out
+of the sitemap, so only `/en/`, `/zh/` and their pages are submitted.
+
 ### Domain-root discovery
 
 The crawler file at <https://zer0-nu1l.github.io/robots.txt> belongs to the
