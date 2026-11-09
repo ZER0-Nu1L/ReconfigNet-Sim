@@ -1,3 +1,69 @@
+# Go OCS Agent and clients
+
+The Go Agent supports direct BFRT and the portable OCS protobuf contract.
+Start from [`../configs/tofino/go-direct-bfrt.example.json`](../configs/tofino/go-direct-bfrt.example.json)
+for a portable direct-BFRT configuration. Supply your model, capability profile,
+management listener and backend mapping explicitly. Use `REQUIRE_MATCH` at
+startup; stop other writers before transferring device ownership.
+
+```sh
+go build ./cmd/ocs-go-agent
+go build ./cmd/ocs-control
+go build ./cmd/ocs-qualify
+./ocs-go-agent --config /path/to/agent.json --check-config
+./ocs-go-agent --config /path/to/agent.json
+./ocs-control --target grpc://device:9339 --operation get
+./ocs-control --target framed://device:9340 --compact --operation get
+```
+
+`client.Dial` returns a connection usable by the generated `OcsOperations`
+stubs. gRPC and framed TCP expose the same lease, revision, ownership and
+synchronous completion contract. The framed listener must be configured in
+`framed_api`. `--compact` omits repeated model data from operation replies and
+works with either transport. Read model/capability data separately when needed.
+The client also supports `framed-unix:///path` for independently provided Unix
+listeners; the Agent configuration currently exposes TCP listeners only.
+Endpoints require a trusted management network; this helper adds no TLS or
+authentication. The framed connection permits one outstanding call at a time.
+
+For a write, acquire control, use the lease's revision as the expected revision,
+and advance it only from the acknowledged reply. Persistent clients must renew
+the lease. Any uncertain completion requires authoritative inspection: never
+retry the write, switch protocols, or restore automatically. See
+[`examples/remote-switch`](examples/remote-switch/main.go) for a small paired
+experiment and `ocs-control --help` for one-shot administrative operations.
+
+## Continuous paired-write qualification
+
+Reserve the entire mapping and stop other writers before running this command.
+Both permutations must be symmetric, without fixed points, and different.
+
+```sh
+./ocs-qualify --target framed://device:9340 --compact --execute \
+  --initial-pi 2,1,4,3 --alternate-pi 3,4,1,2 \
+  --duration 24h --interval 5s --write-interval 60s \
+  --output /private/new-qualification-events.jsonl
+```
+
+This uses one persistent connection, renews the lease at each sample, verifies
+READY/no drift and revision continuity, and performs an acknowledged real
+change/restore pair every minute. Every successful write must advance revision
+once and report one device write request. An unexpected reply, renewal failure,
+transport failure or evidence write failure stops the client; it never attempts
+a restore after an uncertain update. SIGINT/SIGTERM ends the run as failed.
+The event file is exclusive, private and synced after each record. A `complete`
+event means only that this client finished its requested duration; deployment
+qualification must independently validate full-duration sample/write coverage,
+process identity, resource limits, hardware verification age and forwarding.
+Short smoke runs do not provide a 24h certificate.
+
+Transport, compact replies, process parallelism and CPU policy are independent
+choices. `--gomaxprocs=1` is opt-in on the Agent; use `GOMAXPROCS=1` for a client
+only after workload qualification. These affect scheduling and throughput;
+CPU governor policy belongs to the deployment system and can affect the whole
+host. Neither client defaults nor generic configuration force site tuning.
+
+## Diagnostics (off by default)
 
 ### Opt-in northbound timing
 

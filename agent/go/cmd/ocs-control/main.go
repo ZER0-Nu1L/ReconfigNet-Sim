@@ -23,17 +23,21 @@ type output struct {
 
 func main() {
 	operation := flag.String("operation", "get", "get, control-state, apply, mode, or recover")
-	target := flag.String("target", "127.0.0.1:9339", "OcsOperations gRPC target")
+	target := flag.String("target", "127.0.0.1:9339", "gRPC endpoint or framed://host:port")
 	piText := flag.String("pi", "", "comma-separated permutation for apply")
 	strategyText := flag.String("strategy", "delta", "full or delta")
 	transportText := flag.String("transport", "native-batch", "sequential or native-batch")
 	delayUS := flag.Uint64("delay-us", 0, "delete-to-install delay in microseconds")
 	modeText := flag.String("mode", "ocs", "ocs or debug")
 	timeout := flag.Duration("timeout", 10*time.Second, "RPC timeout")
+	compact := flag.Bool("compact", false, "omit repeated model data from operation replies")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
+	if *compact {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-ocs-compact-reply", "true")
+	}
 	connection, err := ocsclient.Dial(ctx, *target)
 	if err != nil {
 		fatal(err)
@@ -122,22 +126,20 @@ func withLease(
 	client ocsv1.OcsOperationsClient,
 	operation func(context.Context, uint64) (any, error),
 ) (any, error) {
-	current, err := client.GetRuntime(ctx, &ocsv1.Empty{})
-	if err != nil {
-		return nil, err
-	}
 	lease, err := client.AcquireControl(ctx, &ocsv1.AcquireControlRequest{
 		ClientId: "ocs-control",
 	})
 	if err != nil {
 		return nil, err
 	}
-	defer client.ReleaseControl(ctx, &ocsv1.ReleaseControlRequest{
-		LeaseToken: lease.GetLeaseToken(),
-	})
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_, _ = client.ReleaseControl(cleanup, &ocsv1.ReleaseControlRequest{LeaseToken: lease.GetLeaseToken()})
+	}()
 	writeCtx := metadata.AppendToOutgoingContext(
 		ctx, "x-ocs-control-lease", lease.GetLeaseToken())
-	return operation(writeCtx, current.GetState().GetRevision())
+	return operation(writeCtx, lease.GetRevision())
 }
 
 func parsePI(value string) ([]uint32, error) {
