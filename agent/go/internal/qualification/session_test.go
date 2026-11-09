@@ -59,6 +59,11 @@ func (f *fake) ApplyBatch(ctx context.Context, r *ocsv1.ApplyBatchRequest, _ ...
 	f.pi = slices.Clone(r.GetPermutation().GetPi())
 	f.revision++
 	reply := &ocsv1.OperationReply{Result: "updated", State: f.state(), RequestId: uint64(f.writes), Timing: &ocsv1.OperationTiming{DeviceWriteRequests: 1}}
+	// Match the production compact projection rather than supplying a full
+	// snapshot that would hide client compatibility errors.
+	if f.badAck != "unknown" {
+		reply.State.DeviceState = nil
+	}
 	switch f.badAck {
 	case "revision":
 		reply.State.Revision--

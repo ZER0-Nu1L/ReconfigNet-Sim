@@ -104,9 +104,16 @@ func (s *Session) Renew(ctx context.Context) error {
 	return nil
 }
 
-func checkState(state *ocsv1.RuntimeState, revision uint64) error {
-	if state.GetRevision() != revision || state.GetMode() != ocsv1.Mode_MODE_OCS || state.GetStatus() != ocsv1.RuntimeStatus_RUNTIME_STATUS_READY || state.GetDeviceState().GetCacheStatus() != "READY" || state.GetDeviceState().GetDriftCount() != 0 {
-		return fmt.Errorf("unexpected revision or device is not READY without drift: %v", state)
+func checkState(state *ocsv1.RuntimeState, revision uint64, full bool) error {
+	if state.GetRevision() != revision || state.GetMode() != ocsv1.Mode_MODE_OCS || state.GetStatus() != ocsv1.RuntimeStatus_RUNTIME_STATUS_READY {
+		return fmt.Errorf("unexpected revision, mode or status: %v", state)
+	}
+	// Compact ApplyBatch ACKs intentionally omit DeviceState. Validate the
+	// fields that belong to that projection; full reads must include health.
+	if full || state.GetDeviceState() != nil {
+		if state.GetDeviceState().GetCacheStatus() != "READY" || state.GetDeviceState().GetDriftCount() != 0 {
+			return fmt.Errorf("device is not READY without drift: %v", state)
+		}
 	}
 	return nil
 }
@@ -119,7 +126,7 @@ func (s *Session) Check(ctx context.Context) error {
 	if err != nil {
 		return s.fail(err)
 	}
-	if err := checkState(reply.GetState(), s.revision); err != nil {
+	if err := checkState(reply.GetState(), s.revision, true); err != nil {
 		return s.fail(err)
 	}
 	if !slices.Equal(reply.GetPermutation().GetPi(), s.options.Initial) {
@@ -150,7 +157,7 @@ func (s *Session) Pair(ctx context.Context, emit func(Event) error) error {
 		if err != nil {
 			return s.fail(fmt.Errorf("write outcome requires inspection; no replay or restore: %w", err))
 		}
-		if err := checkState(reply.GetState(), s.revision+1); err != nil {
+		if err := checkState(reply.GetState(), s.revision+1, !s.options.Compact); err != nil {
 			return s.fail(err)
 		}
 		if reply.GetResult() != "updated" || reply.GetTiming().GetDeviceWriteRequests() != 1 {
